@@ -76,6 +76,7 @@ int main(int argc, char **argv) {
   setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 
 	     (const void *)&optval , sizeof(int));
 
+
   /*
    * build the server's Internet address
    */
@@ -95,17 +96,22 @@ int main(int argc, char **argv) {
    * main loop: wait for a datagram, then echo it
    */
   clientlen = sizeof(clientaddr);
-  while (1) {
-
     /*
      * recvfrom: receive a UDP datagram from a client
      */
+
+  while(1)
+    {
     fileDetails f;
     bzero(buf, BUFSIZE);
-    n = recvfrom(sockfd, (char*)&f, sizeof(fileDetails), 0,
-		 (struct sockaddr *) &clientaddr, &clientlen);
+    n = recvfrom(sockfd, (char*)&f, sizeof(fileDetails), 0,(struct sockaddr *) &clientaddr, &clientlen);
     if (n < 0)
       error("ERROR in recvfrom");
+    int noOfReceivedPackets = 0;
+    int packetsReceived[f.noOfChunks+4];
+    int i;
+    for(i=1;i<=f.noOfChunks;++i)
+      packetsReceived[i]=0;
     
 
     /* 
@@ -125,9 +131,57 @@ int main(int argc, char **argv) {
     /* 
      * sendto: echo the input back to the client 
      */
-    n = sendto(sockfd, buf, strlen(buf), 0, 
-	       (struct sockaddr *) &clientaddr, clientlen);
+    bzero(buf,BUFSIZE);
+    strcpy(buf,"Received file details");
+    printf("%s\n",buf);
+    n = sendto(sockfd, buf, strlen(buf), 0,(struct sockaddr *) &clientaddr, clientlen);
     if (n < 0) 
       error("ERROR in sendto");
-  }
+    fileChunk allPackets[f.noOfChunks+4];
+    fileChunk p;
+    //printf("%d %d",noOfReceivedPackets,f.noOfChunks);
+    while(noOfReceivedPackets!=f.noOfChunks)
+    {
+         n = recvfrom(sockfd, (char*)&p, sizeof(fileChunk), 0,(struct sockaddr *) &clientaddr, &clientlen);
+         int seqNo = p.sequenceNumber;
+         if(packetsReceived[seqNo])
+         {
+            memset(buf,0,strlen(buf));
+            strcpy(buf,"ACK");
+            char seqId[10];
+            sprintf(seqId,"%d",seqNo);
+            strcat(buf,seqId);
+
+           n = sendto(sockfd, buf, strlen(buf), 0,(struct sockaddr *) &clientaddr, clientlen);
+           if (n < 0) 
+             error("ERROR in sendto");
+        }
+         else
+         {
+             noOfReceivedPackets++;
+             hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+             if (hostp == NULL)
+             error("ERROR on gethostbyaddr");
+             hostaddrp = inet_ntoa(clientaddr.sin_addr);
+             if (hostaddrp == NULL)
+             error("ERROR on inet_ntoa\n");
+             printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+             printf("server received %d/%d bytes: SequenceNumber:%d\n", sizeof(fileChunk), n, p.sequenceNumber);
+             allPackets[seqNo] = p;
+             packetsReceived[seqNo]=1;
+             char buf1[20];
+             bzero(buf1,20);
+             strcpy(buf1,"ACK");
+             char seqId[10];
+             sprintf(seqId,"%d",seqNo);
+             strcat(buf1,seqId);
+             buf1[strlen(buf1)]='\0';
+             n = sendto(sockfd, buf1, strlen(buf1), 0,(struct sockaddr *) &clientaddr, clientlen);
+             if (n < 0) 
+                error("ERROR in sendto");
+         }
+     }
+    }
+
+  return 0;
 }

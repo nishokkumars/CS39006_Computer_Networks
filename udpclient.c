@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <sys/time.h>
 #include <netdb.h> 
+#include <poll.h>
 #define BUFSIZE 1024 // to divide into chunks of 1 KB
 #define h_addr h_addr_list[0]
 /* 
@@ -45,9 +46,6 @@ int main(int argc, char **argv) {
     char *hostname;
     char *fileName;
     char buf[BUFSIZE];
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 1000000;
 
     /* check command line arguments */
     if (argc != 4) {
@@ -97,7 +95,6 @@ int main(int argc, char **argv) {
     strcpy(f.fileName,argv[3]);
     f.fileSize = fileSize;
     f.noOfChunks = noOfChunks;
-    printf("%s %d %d\n",f.fileName,f.fileSize,f.noOfChunks);
     /* send the message to the server */
     serverlen = sizeof(serveraddr);
     n = sendto(sockfd, (char*)(&f), sizeof(f), 0, &serveraddr, serverlen);
@@ -105,9 +102,62 @@ int main(int argc, char **argv) {
       error("ERROR in sendto");
     
     /* print the server's reply */
-    n = recvfrom(sockfd, buf, strlen(buf), 0, &serveraddr, &serverlen);
+    char buff[1024];
+    n = recvfrom(sockfd, buff, 1024, 0, &serveraddr, &serverlen);
     if (n < 0) 
       error("ERROR in recvfrom");
+    printf("Message from server: %s \n",buff);
+    int noOfSentPackets = 0;
+    int prevRead = 1;
+    fileChunk p;
+    while(noOfSentPackets!=f.noOfChunks)
+    {
+         if(prevRead)
+         { 
+            bzero(buf,BUFSIZE);
+            fread(buf,BUFSIZE,1,fp);
+            strcpy(p.chunkContents,buf);
+            p.sequenceNumber = noOfSentPackets+1;
+            p.chunkLength = strlen(buf);
+            prevRead = 0;
+            
+         }
+         n = sendto(sockfd, (char*)(&p), sizeof(p), 0, &serveraddr, serverlen);
+         if (n < 0) 
+           error("ERROR in sendto");
+         char buf3[50];
+         bzero(buf3,50);
+         struct pollfd fd;
+         int ret;
+
+           fd.fd = sockfd; // your socket handler 
+           fd.events = POLLIN;
+            ret = poll(&fd, 1, 1000); // 1 second for timeout
+          switch (ret) {
+          case -1:
+             // Error
+            break;
+          case 0:
+          prevRead=0;
+          break;
+          default:
+         n = recvfrom(sockfd, buf3, 15, 0, &serveraddr, &serverlen);
+         if (n < 0) 
+            error("ERROR in recvfrom");
+         char buf1[50]="ACK";
+         char buf2[10];
+         sprintf(buf2,"%d",noOfSentPackets+1);
+         strcat(buf1,buf2);
+         printf("Message from server: %s\n",buf3);
+         if(strcmp(buf1,buf3)==0)
+         {
+            noOfSentPackets++;
+            prevRead = 1;
+         } // get your data
+        break;
+         }
+
+    }
     fclose(fp);
     return 0;
 }
