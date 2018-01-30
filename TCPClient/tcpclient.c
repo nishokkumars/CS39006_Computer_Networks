@@ -1,0 +1,150 @@
+/* 
+ * tcpclient.c - A simple TCP client
+ * usage: tcpclient <host> <port>
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h> 
+#include <sys/stat.h>
+#include <errno.h>
+
+#define BUFSIZE 1024*1024
+
+char buf[BUFSIZE];
+
+/* 
+ * error - wrapper for perror
+ */
+void error(char *msg) {
+    perror(msg);
+    exit(0);
+}
+
+off_t fsize(const char *filename) {
+    struct stat st;
+
+    if (stat(filename, &st) == 0)
+        return st.st_size;
+
+    fprintf(stderr, "Cannot determine size of %s: %s\n",
+            filename, strerror(errno));
+
+    return -1;
+}
+
+int main(int argc, char **argv) {
+    int sockfd, portno, n;
+    struct sockaddr_in serveraddr;
+    struct hostent *server;
+    char *hostname;
+    
+
+    /* check command line arguments */
+    if (argc != 3) {
+       fprintf(stderr,"usage: %s <hostname> <port>\n", argv[0]);
+       exit(0);
+    }
+    hostname = argv[1];
+    portno = atoi(argv[2]);
+
+    /* socket: create the socket */
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) 
+        error("ERROR opening socket");
+
+    /* gethostbyname: get the server's DNS entry */
+    server = gethostbyname(hostname);
+    if (server == NULL) {
+        fprintf(stderr,"ERROR, no such host as %s\n", hostname);
+        exit(0);
+    }
+
+    /* build the server's Internet address */
+    bzero((char *) &serveraddr, sizeof(serveraddr));
+    serveraddr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, 
+	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+    serveraddr.sin_port = htons(portno);
+
+    /* connect: create a connection with the server */
+    if (connect(sockfd, &serveraddr, sizeof(serveraddr)) < 0) 
+      error("ERROR connecting");
+
+    char * filename = "/home/subham/Downloads/Socket(1)/Socket/TCP/sample.txt";
+    int size = fsize(filename);
+
+    /* get message line from the user */
+    //printf("Please enter msg: ");
+    //bzero(buf, BUFSIZE);
+    //fgets(buf, BUFSIZE, stdin);
+
+    /* send the message line to the server */
+    n = write(sockfd, filename, strlen(filename));
+    if (n < 0) 
+      error("ERROR writing to socket");
+
+    /* print the server's reply */
+    bzero(buf, BUFSIZE);
+    n = read(sockfd, buf, BUFSIZE);
+    if (n < 0) 
+      error("ERROR reading from socket");
+    printf("Echo from server: %s\n", buf);
+
+    //printf("%d", size);
+    
+    char file_size[10];
+    snprintf(file_size,sizeof(file_size), "%d",size);
+    n= write(sockfd, file_size, strlen(file_size));
+    if (n < 0) 
+      error("ERROR writing to socket");
+    bzero(buf, BUFSIZE);
+    n = read(sockfd, buf, BUFSIZE);
+    if (n < 0) 
+      error("ERROR reading from socket");
+    printf("Echo from server: %s\no", buf);
+
+    FILE *f = fopen(filename, "rb");
+    if(f==NULL){
+        error("ERROR in opening file\n");
+        exit(1);
+    }
+    n =0;
+    
+    while(!feof(f)){
+        int reader = fread(buf, 1, sizeof(buf), f);
+        if(reader<0)
+            error("ERROR reading from file\n");
+        n = write(sockfd, buf, BUFSIZE);
+        if (n < 0) 
+            error("ERROR writing to socket");
+        else
+            printf("Wrote %d bytes\n", n);
+        bzero(buf, BUFSIZE);
+        n = read(sockfd, buf, BUFSIZE);
+        if (n < 0) 
+            error("ERROR reading from socket");
+        printf("Echo from server: %s\n", buf);
+
+        //reader = fread(buf, 1, sizeof(buf), f);
+        //if(reader<0)
+        //    error("ERROR reading from file\n");
+    }
+    /*n = write(sockfd, buf, BUFSIZE);
+    if (n < 0) 
+        error("ERROR writing to socket");
+    else
+        printf("Wrote %d bytes\n", n);
+    bzero(buf, BUFSIZE);
+    n = read(sockfd, buf, BUFSIZE);
+    if (n < 0) 
+        error("ERROR reading from socket");
+    printf("Echo from server: %s\n", buf);*/
+    fclose(f);
+    close(sockfd);
+    return 0;
+}
