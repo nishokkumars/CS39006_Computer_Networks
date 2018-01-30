@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
     if (connect(sockfd, &serveraddr, sizeof(serveraddr)) < 0) 
       error("ERROR connecting");
 
-    char * filename = "/home/subham/Downloads/Socket(1)/Socket/TCP/sample.txt";
+    char * filename = "sample.txt";
     int size = fsize(filename);
 
     /* get message line from the user */
