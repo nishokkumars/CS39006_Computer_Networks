@@ -7,11 +7,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <sys/time.h>
 #include <netdb.h> 
 #include <poll.h>
+#include <stdbool.h>
 #define BUFSIZE 1024 // to divide into chunks of 1 KB
 #define h_addr h_addr_list[0]
 /* 
@@ -38,10 +41,14 @@ void error(char *msg) {
     exit(0);
 }
 
+
+
+
 int main(int argc, char **argv) {
     int sockfd, portno, n;
     int serverlen;
     struct sockaddr_in serveraddr;
+    struct addrinfo *my_info,hints;
     struct hostent *server;
     char *hostname;
     char *fileName;
@@ -67,6 +74,13 @@ int main(int argc, char **argv) {
         fprintf(stderr,"ERROR, no such host as %s\n", hostname);
         exit(0);
     }
+   
+    memset (&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    getaddrinfo(NULL, argv[2], &hints, &my_info);
 
     /* build the server's Internet address */
     bzero((char *) &serveraddr, sizeof(serveraddr));
@@ -74,21 +88,24 @@ int main(int argc, char **argv) {
     bcopy((char *)server->h_addr,(char *)&serveraddr.sin_addr.s_addr, server->h_length);
     serveraddr.sin_port = htons(portno);
 
+
+
     /* get a message from the user */
     bzero(buf, BUFSIZE);
     
     //printf("Please enter msg: ");
     //fgets(buf, BUFSIZE, stdin);
-    FILE *fp = fopen(argv[3],"r");
+    FILE *fp = fopen(argv[3],"rb");
     if (fp == NULL) {
         printf("File does not exist \n");
         return 1;
     }
-    fseek(fp, 0, 2);    /* file pointer at the end of file */
-    int fileSize = ftell(fp); 
-    fclose(fp);
-    fp = fopen(argv[3],"r");
+    struct stat inputFileInfo;
 
+    // Get filesize to calculate total number of fragments and total number of fragment digits
+    stat(argv[3], &inputFileInfo);
+    int fileSize = inputFileInfo.st_size;
+    
     int noOfChunks = fileSize%1024 == 0 ? fileSize/1024 : (fileSize/1024+1);
     
     fileDetails f;
@@ -100,7 +117,7 @@ int main(int argc, char **argv) {
     n = sendto(sockfd, (char*)(&f), sizeof(f), 0, &serveraddr, serverlen);
     if (n < 0) 
       error("ERROR in sendto");
-    
+    int temp=f.fileSize;
     /* print the server's reply */
     char buff[1024];
     n = recvfrom(sockfd, buff, 1024, 0, &serveraddr, &serverlen);
@@ -114,11 +131,20 @@ int main(int argc, char **argv) {
     {
          if(prevRead)
          { 
-            bzero(buf,BUFSIZE);
-            fread(buf,BUFSIZE,1,fp);
-            strcpy(p.chunkContents,buf);
+            unsigned int i;char nextChar;
+            bool endOfFile = feof(fp);
+            for (i = 0; i < BUFSIZE && !endOfFile; i++) {
+                nextChar = getc (fp);
+                if (feof(fp)) {
+                    endOfFile = true;
+                    i--;
+                } else {
+                    p.chunkContents[i] = nextChar;
+                }
+            }
+            p.chunkContents[i]='\0';
             p.sequenceNumber = noOfSentPackets+1;
-            p.chunkLength = strlen(buf);
+            p.chunkLength = i;
             prevRead = 0;
             
          }
@@ -127,7 +153,7 @@ int main(int argc, char **argv) {
            error("ERROR in sendto");
          char buf3[50];
          bzero(buf3,50);
-         struct pollfd fd;
+                  struct pollfd fd;
          int ret;
 
            fd.fd = sockfd; // your socket handler 
@@ -158,6 +184,31 @@ int main(int argc, char **argv) {
          }
 
     }
-    fclose(fp);
+    char buffer[1024];
+    n = recvfrom(sockfd, buffer, 1024, 0, &serveraddr, &serverlen);
+    char command[1024];
+     strcpy(command,"md5sum ");
+     strcat(command,f.fileName);
+    FILE *md5_cmd = popen(command, "r");
+    if (md5_cmd == NULL) {
+        fprintf(stderr, "popen(3) error");
+        exit(EXIT_FAILURE);
+    }
+
+    static char buffer1[1024];
+    size_t nn;
+
+    while ((nn = fread(buffer1, 1, sizeof(buffer1)-1, md5_cmd)) > 0) {
+        buffer1[nn] = '\0';
+        break;
+    }
+    printf("%s\n",buffer1);
+    printf("%s\n",buffer);
+    if(strcmp(buffer1,buffer)==0)
+    {
+        printf("MD5 matched\n");
+    }
+    else printf("MD5 no match\n");
+    freeaddrinfo(my_info);
     return 0;
 }

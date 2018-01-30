@@ -9,9 +9,12 @@
 #include <netdb.h>
 #include <sys/time.h>
 #include <sys/types.h> 
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/stat.h>
+
 
 #define BUFSIZE 1024 // to divide into chunks of 1 KB
 /*
@@ -126,21 +129,22 @@ int main(int argc, char **argv) {
       error("ERROR on inet_ntoa\n");
     printf("server received datagram from %s (%s)\n", 
 	   hostp->h_name, hostaddrp);
-    printf("server received %d/%d bytes: %s\n", sizeof(fileDetails), n, f.fileName);
+    printf("server received %d/%d bytes: %s\n", sizeof(fileDetails), f.noOfChunks, f.fileName);
    
     /* 
      * sendto: echo the input back to the client 
      */
     bzero(buf,BUFSIZE);
     strcpy(buf,"Received file details");
-    printf("%s\n",buf);
+    printf("%s %d %d\n",buf,f.fileSize,f.noOfChunks);
     n = sendto(sockfd, buf, strlen(buf), 0,(struct sockaddr *) &clientaddr, clientlen);
     if (n < 0) 
       error("ERROR in sendto");
     fileChunk allPackets[f.noOfChunks+4];
     fileChunk p;
     //printf("%d %d",noOfReceivedPackets,f.noOfChunks);
-    while(noOfReceivedPackets!=f.noOfChunks)
+    FILE* fp = fopen(f.fileName,"ab");
+    while(noOfReceivedPackets<f.noOfChunks)
     {
          n = recvfrom(sockfd, (char*)&p, sizeof(fileChunk), 0,(struct sockaddr *) &clientaddr, &clientlen);
          int seqNo = p.sequenceNumber;
@@ -167,7 +171,10 @@ int main(int argc, char **argv) {
              error("ERROR on inet_ntoa\n");
              printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
              printf("server received %d/%d bytes: SequenceNumber:%d\n", sizeof(fileChunk), n, p.sequenceNumber);
-             allPackets[seqNo] = p;
+             unsigned int i;
+             for(i = 0; i < p.chunkLength; ++i) {
+                fputc(p.chunkContents[i],fp);
+             }
              packetsReceived[seqNo]=1;
              char buf1[20];
              bzero(buf1,20);
@@ -181,6 +188,28 @@ int main(int argc, char **argv) {
                 error("ERROR in sendto");
          }
      }
+     fclose(fp);
+     char command[1024];
+     strcpy(command,"md5sum ");
+     strcat(command,f.fileName);
+    FILE *md5_cmd = popen(command, "r");
+    if (md5_cmd == NULL) {
+        fprintf(stderr, "popen(3) error");
+        exit(EXIT_FAILURE);
+    }
+
+    static char buffer[1024];
+    size_t n;
+
+    while ((n = fread(buffer, 1, sizeof(buffer)-1, md5_cmd)) > 0) {
+        buffer[n] = '\0';
+        break;
+    }
+    n = sendto(sockfd, buffer, strlen(buffer), 0,(struct sockaddr *) &clientaddr, clientlen);
+    if (n < 0) 
+        error("ERROR in sendto");
+
+
     }
 
   return 0;
