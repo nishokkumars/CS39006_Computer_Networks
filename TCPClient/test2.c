@@ -38,54 +38,62 @@ off_t fsize(const char *filename) {
     return -1;
 }
 
-int send_image(int socket, char * filename){
+int send_file(int socket, char * filename){
 
-   FILE *picture;
+   FILE *file;
    int size, read_size, stat, packet_index;
    char send_buffer[10240], read_buffer[256];
    packet_index = 1;
 
-   picture = fopen(filename, "r");
-   printf("Getting Picture Size\n");   
-
-   if(picture == NULL) {
+   file = fopen(filename, "r");
+   
+   if(file == NULL) {
         printf("Error Opening Image File"); } 
 
-   fseek(picture, 0, SEEK_END);
-   size = ftell(picture);
-   fseek(picture, 0, SEEK_SET);
-   printf("Total Picture size: %i\n",size);
+   fseek(file, 0, SEEK_END);
+   size = ftell(file);
+   fseek(file, 0, SEEK_SET);
+   printf("Total File size: %i\n",size);
 
    //Send Picture Size
-   printf("Sending Picture Size\n");
+   printf("Sending File Size\n");
    write(socket, (void *)&size, sizeof(int));
 
    //Send Picture as Byte Array
-   printf("Sending Picture as Byte Array\n");
+   printf("Sending File as Byte Array\n");
 
-   do { //Read while we get errors that are due to signals.
+   stat=read(socket, &read_buffer , 255);
+   printf("Bytes read: %i\n",stat);
+   while(stat<0){
       stat=read(socket, &read_buffer , 255);
       printf("Bytes read: %i\n",stat);
-   } while (stat < 0);
+   }
+
+   //do { //Read while we get errors that are due to signals.
+    //  stat=read(socket, &read_buffer , 255);
+    //  printf("Bytes read: %i\n",stat);
+   //} while (stat < 0);
 
    printf("Received data in socket\n");
    printf("Socket data: %c\n", read_buffer);
 
-   while(!feof(picture)) {
-   //while(packet_index = 1){
-      //Read from the file into our send buffer
-      read_size = fread(send_buffer, 1, sizeof(send_buffer)-1, picture);
+   while(!feof(file)) {
+      read_size = fread(send_buffer, 1, sizeof(send_buffer)-1, file);
 
       //Send data through our socket 
-      do{
+      stat = write(socket, send_buffer, read_size);  
+      while(stat<0){
         stat = write(socket, send_buffer, read_size);  
-      }while (stat < 0);
+      }
+      //do{
+      //  stat = write(socket, send_buffer, read_size);  
+      //}while (stat < 0);
 
       printf("Packet Number: %i\n",packet_index);
       printf("Packet Size Sent: %i\n",read_size);     
       printf(" \n");
       printf(" \n");
-      packet_index++;  
+      ++packet_index;  
 
       //Zero out our send buffer
       bzero(send_buffer, sizeof(send_buffer));
@@ -172,7 +180,7 @@ int main(int argc, char **argv) {
       error("ERROR reading from socket");
     printf("Echo from server: %s\no", buf);
 
-    int x = send_image(sockfd, filename);
+    int x = send_file(sockfd, filename);
 	char buffer[1024];
 	n = read(sockfd, buffer, sizeof(buffer));
 	char command[1024];
