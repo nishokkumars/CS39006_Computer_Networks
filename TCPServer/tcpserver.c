@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
    */
   clientlen = sizeof(clientaddr);
   while (1) {
-	fileDetails f;
+	  fileDetails f;
     /* 
      * accept: wait for a connection request 
      */
@@ -164,8 +164,8 @@ int main(int argc, char **argv) {
     n = read(childfd, buf, BUFSIZE);
     if (n < 0) 
       error("ERROR reading from socket");
-	else
-		strcpy(f.fileName, buf);
+	  else
+		  strcpy(f.fileName, buf);
     printf("server received %d bytes: %s\n", n, buf);
     
     /* 
@@ -181,7 +181,8 @@ int main(int argc, char **argv) {
     if (n < 0) 
       error("ERROR reading from socket");
     int read_size = atoi(buf);
-	f.fileSize = read_size;
+    printf("%d\n", read_size);
+	  f.fileSize = read_size;
     printf("server received %d bytes: %s\n", n, buf);
     
     /* 
@@ -193,7 +194,7 @@ int main(int argc, char **argv) {
 
     int final_read =0;
     char ack[] = {'R','E','C','V','D'};
-    FILE *fp = fopen(f.fileName,"ab");
+    FILE *fp = fopen(f.fileName,"wb");
     if (fp == NULL)
     {
         printf("Error opening file!\n");
@@ -204,8 +205,12 @@ int main(int argc, char **argv) {
       n = read(childfd, buf, BUFSIZE);
       if (n < 0) 
         error("ERROR reading from socket");
-      final_read = final_read+n;
-      fprintf(fp,buf);
+      final_read = final_read+strlen(buf);
+      printf("%d\n", final_read);
+      int i;
+      for(i = 0; i < strlen(buf); ++i) {
+        fputc(buf[i],fp);
+      }
       n = write(childfd, ack,sizeof(ack));
       if (n < 0) 
         error("ERROR writing to socket");
@@ -222,23 +227,24 @@ int main(int argc, char **argv) {
     printf("Read size = %d\n", final_read); */
     fclose(fp);
 	
-	char command[1024];
-	strcpy(command, "md5sum ");
-	strcat(command, f.fileName);
-	FILE *md5_cmd = popen(command, "r");
-	if(md5_cmd == NULL){
-		fprintf(stderr, "popen(3) error");
-		exit(EXIT_FAILURE);
-	}
-	static char buffer[1024];
-	size_t m;
-	while((m=fread(buffer,1,sizeof(buffer)-1, md5_cmd))>0){  
-		buffer[m]='\0';
-		break;
-	}
-	m = write(childfd, buffer, sizeof(buffer));
-	if(m<0)
-		error("ERROR in writing to socket\n");
+  	char command[1024];
+  	strcpy(command, "md5sum ");
+  	strcat(command, f.fileName);
+  	FILE *md5_cmd = popen(command, "r");
+  	if(md5_cmd == NULL){
+  		fprintf(stderr, "popen(3) error");
+  		exit(EXIT_FAILURE);
+  	}
+    printf("md5 reached\n");
+  	static char buffer[1024];
+  	size_t m;
+  	while((m=fread(buffer,1,sizeof(buffer)-1, md5_cmd))>0){  
+  		buffer[m]='\0';
+  		break;
+  	}
+  	m = write(childfd, buffer, sizeof(buffer));
+  	if(m<0)
+  		error("ERROR in writing to socket\n");
   }
   close(childfd);
 }

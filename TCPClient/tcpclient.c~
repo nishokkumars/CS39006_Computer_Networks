@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
     if (connect(sockfd, &serveraddr, sizeof(serveraddr)) < 0) 
       error("ERROR connecting");
 
-    char * filename = "sample.txt";
+    char * filename = "testfile1.png";
     int size = fsize(filename);
 
     /* get message line from the user */

@@ -12,6 +12,7 @@
 #include <netdb.h> 
 #include <sys/stat.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #define BUFSIZE 1024
 
@@ -75,7 +76,7 @@ int main(int argc, char **argv) {
     if (connect(sockfd, &serveraddr, sizeof(serveraddr)) < 0) 
       error("ERROR connecting");
 
-    char * filename = "sample.txt";
+    char * filename = "testfile1.png";
     int size = fsize(filename);
 
     /* get message line from the user */
@@ -116,21 +117,34 @@ int main(int argc, char **argv) {
     n =0;
     
     while(!feof(f)){
-        int reader = fread(buf, 1, sizeof(buf), f);
-        if(reader<0)
-            error("ERROR reading from file\n");
-        n = write(sockfd, buf, BUFSIZE);
+        unsigned int i;char nextChar;
+        bool endOfFile = feof(f);
+        for (i = 0; i < BUFSIZE && !endOfFile; i++) {
+            nextChar = getc (f);
+            if (feof(f)) {
+                endOfFile = true;
+                i--;
+            } else {
+                buf[i] = nextChar;
+            }
+        }
+        buf[i]='\0';
+        //if(reader<0)
+        //    error("ERROR reading from file\n");
+        n = write(sockfd, buf,i);
         if (n < 0) 
             error("ERROR writing to socket");
         else
-            printf("Wrote %d bytes\n", n);
+            printf("Wrote %d bytes\n", i);
         bzero(buf, BUFSIZE);
         n = read(sockfd, buf, BUFSIZE);
         if (n < 0) 
             error("ERROR reading from socket");
         printf("Echo from server: %s\n", buf);
+        if(endOfFile==true)break;
     }
     fclose(f);
+    printf("FIle transfer done\n");
 	char buffer[1024];
 	n = read(sockfd, buffer, sizeof(buffer));
 	char command[1024];
