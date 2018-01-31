@@ -38,6 +38,60 @@ off_t fsize(const char *filename) {
     return -1;
 }
 
+int send_image(int socket, char * filename){
+
+   FILE *picture;
+   int size, read_size, stat, packet_index;
+   char send_buffer[10240], read_buffer[256];
+   packet_index = 1;
+
+   picture = fopen(filename, "r");
+   printf("Getting Picture Size\n");   
+
+   if(picture == NULL) {
+        printf("Error Opening Image File"); } 
+
+   fseek(picture, 0, SEEK_END);
+   size = ftell(picture);
+   fseek(picture, 0, SEEK_SET);
+   printf("Total Picture size: %i\n",size);
+
+   //Send Picture Size
+   printf("Sending Picture Size\n");
+   write(socket, (void *)&size, sizeof(int));
+
+   //Send Picture as Byte Array
+   printf("Sending Picture as Byte Array\n");
+
+   do { //Read while we get errors that are due to signals.
+      stat=read(socket, &read_buffer , 255);
+      printf("Bytes read: %i\n",stat);
+   } while (stat < 0);
+
+   printf("Received data in socket\n");
+   printf("Socket data: %c\n", read_buffer);
+
+   while(!feof(picture)) {
+   //while(packet_index = 1){
+      //Read from the file into our send buffer
+      read_size = fread(send_buffer, 1, sizeof(send_buffer)-1, picture);
+
+      //Send data through our socket 
+      do{
+        stat = write(socket, send_buffer, read_size);  
+      }while (stat < 0);
+
+      printf("Packet Number: %i\n",packet_index);
+      printf("Packet Size Sent: %i\n",read_size);     
+      printf(" \n");
+      printf(" \n");
+      packet_index++;  
+
+      //Zero out our send buffer
+      bzero(send_buffer, sizeof(send_buffer));
+    }
+}
+
 int main(int argc, char **argv) {
     int sockfd, portno, n;
     struct sockaddr_in serveraddr;
@@ -118,56 +172,7 @@ int main(int argc, char **argv) {
       error("ERROR reading from socket");
     printf("Echo from server: %s\no", buf);
 
-    FILE *f = fopen(filename, "rb");
-    if(f==NULL){
-        error("ERROR in opening file\n");
-        exit(1);
-    }
-    n =0;
-    
-    while(!feof(f)){
-        /*int i;char nextChar;
-        bool endOfFile = feof(f);
-        for (i = 0; i < BUFSIZE && !endOfFile; i++) {
-            nextChar = getc (f);
-            if (feof(f)) {
-                endOfFile = true;
-                i--;
-            } else {
-                buf[i] = nextChar;
-            }
-        }
-        buf[i]='\0';*/
-
-        //if(reader<0)
-        //    error("ERROR reading from file\n");
-        /*n = write(sockfd, buf,i);
-        if (n < 0) 
-            error("ERROR writing to socket");
-        else
-            printf("Wrote %d bytes\n", i);
-        bzero(buf, BUFSIZE);
-        n = read(sockfd, buf, BUFSIZE);
-        if (n < 0) 
-            error("ERROR reading from socket");
-        printf("Echo from server: %s\n", buf);
-        if(endOfFile==true)break;*/
-        int reader = fread(buf, 1, sizeof(buf), f);
-        if(reader<0)
-            error("ERROR reading from file\n");
-        n = write(sockfd, buf, BUFSIZE);
-        if (n < 0) 
-            error("ERROR writing to socket");
-        else
-            printf("Wrote %d bytes\n", n);
-        bzero(buf, BUFSIZE);
-        n = read(sockfd, buf, BUFSIZE);
-        if (n < 0) 
-            error("ERROR reading from socket");
-        printf("Echo from server: %s\n", buf);
-    }
-    fclose(f);
-    printf("FIle transfer done\n");
+    int x = send_image(sockfd, filename);
 	char buffer[1024];
 	n = read(sockfd, buffer, sizeof(buffer));
 	char command[1024];
