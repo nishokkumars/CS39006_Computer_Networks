@@ -19,11 +19,11 @@ tcpserver: tcpserver.o
 tcpclient: tcpclient.o
 	gcc -g ./TCPClient/tcpclient.o -o ./TCPClient/tcpclient -lm
 
-tcpclient.o: ./TCPClient/tcpclient.c 
-	gcc -g ./TCPClient/tcpclient.c -c -o ./TCPClient/tcpclient.o
+tcpclient.o: ./TCPClient/tcpClient.c 
+	gcc -g ./TCPClient/tcpClient.c -c -o ./TCPClient/tcpclient.o
 
-tcpserver.o: ./TCPServer/tcpserver.c
-	gcc -g ./TCPServer/tcpserver.c -c -o ./TCPServer/tcpserver.o
+tcpserver.o: ./TCPServer/tcpserver2.c
+	gcc -g ./TCPServer/tcpserver2.c -c -o ./TCPServer/tcpserver.o
 
 clean:
 	rm ./UDPClient/udpclient ./UDPServer/udpserver ./TCPServer/tcpserver ./TCPClient/tcpclient
