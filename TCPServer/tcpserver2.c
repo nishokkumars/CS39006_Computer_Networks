@@ -240,75 +240,61 @@ int main(int argc, char **argv) {
     childfd = accept(parentfd, (struct sockaddr *) &clientaddr, &clientlen);
     if (childfd < 0) 
       error("ERROR on accept");
-    
-    /* 
-     * gethostbyaddr: determine who sent the message 
-     */
-    /*hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, 
-		//	  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-    if (hostp == NULL)
-      error("ERROR on gethostbyaddr");
-    hostaddrp = inet_ntoa(clientaddr.sin_addr);
-    if (hostaddrp == NULL)
-      error("ERROR on inet_ntoa\n");
-    printf("server established connection with %s (%s)\n", 
-	   hostp->h_name, hostaddrp);*/
-    
-    /* 
-     * read: read input string from the client
-     */
-    bzero(buf, BUFSIZE);
-    n = read(childfd, buf, BUFSIZE);
-    if (n < 0) 
-      error("ERROR reading from socket");
+    if(fork() == 0)
+    {
+      close(parentfd);     
+      bzero(buf, BUFSIZE);
+      n = read(childfd, buf, BUFSIZE);
+      if (n < 0) 
+          error("ERROR reading from socket");
 	  else
 		  strcpy(f.fileName, buf);
-    printf("server received %d bytes: %s\n", n, buf);
+      printf("server received %d bytes: %s\n", n, buf);
     
-    /* 
-     * write: echo the input string back to the client 
-     */
-    n = write(childfd, buf, strlen(buf));
-    if (n < 0) 
-      error("ERROR writing to socket");
+      /* 
+       * write: echo the input string back to the client 
+      */
+      n = write(childfd, buf, strlen(buf));
+      if (n < 0) 
+          error("ERROR writing to socket");
 
-    bzero(buf, BUFSIZE);
-    n = read(childfd, buf, BUFSIZE);
+      bzero(buf, BUFSIZE);
+      n = read(childfd, buf, BUFSIZE);
     
-    if (n < 0) 
-      error("ERROR reading from socket");
-    int read_size = atoi(buf);
-    printf("%d\n", read_size);
+      if (n < 0) 
+          error("ERROR reading from socket");
+      int read_size = atoi(buf);
+      printf("%d\n", read_size);
 	  f.fileSize = read_size;
-    printf("server received %d bytes: %s\n", n, buf);
+      printf("server received %d bytes: %s\n", n, buf);
     
-    /* 
-     * write: echo the input string back to the client 
-     */
-    n = write(childfd, buf, strlen(buf));
-    if (n < 0) 
-      error("ERROR writing to socket");
-
-    receive_file(childfd, f.fileName);
-	
-  	char command[1024];
-  	strcpy(command, "md5sum ");
-  	strcat(command, f.fileName);
-  	FILE *md5_cmd = popen(command, "r");
-  	if(md5_cmd == NULL){
+      /* 
+       * write: echo the input string back to the client 
+      */
+      n = write(childfd, buf, strlen(buf));
+      if (n < 0) 
+        error("ERROR writing to socket");
+      receive_file(childfd, f.fileName);
+	  char command[1024];
+  	  strcpy(command, "md5sum ");
+  	  strcat(command, f.fileName);
+  	  FILE *md5_cmd = popen(command, "r");
+  	  if(md5_cmd == NULL){
   		fprintf(stderr, "popen(3) error");
   		exit(EXIT_FAILURE);
-  	}
-    printf("md5 reached\n");
-  	static char buffer[1024];
-  	size_t m;
-  	while((m=fread(buffer,1,sizeof(buffer)-1, md5_cmd))>0){  
+  	  }
+      printf("md5 reached\n");
+  	  static char buffer[1024];
+  	  size_t m;
+  	  while((m=fread(buffer,1,sizeof(buffer)-1, md5_cmd))>0){  
   		buffer[m]='\0';
   		break;
-  	}
-  	m = write(childfd, buffer, sizeof(buffer));
-  	if(m<0)
-  		error("ERROR in writing to socket\n");
+  	  }
+  	  m = write(childfd, buffer, sizeof(buffer));
+  	  if(m<0)
+  		  error("ERROR in writing to socket\n");
+      exit(0);
+    } 
+    close(childfd);
   }
-  close(childfd);
 }
