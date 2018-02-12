@@ -63,6 +63,13 @@ struct hostent {
  * error - wrapper for perror
  */
 
+typedef struct 
+{
+  char *name;
+  char *ip;
+  int port_no;
+}user_info;
+
 
 void error(char *msg) {
   perror(msg);
@@ -146,7 +153,9 @@ int main(int argc, char **argv) {
   int max_fd,fd;
   while(1)
   {
-    struct timeval t = {100,0};
+    struct timeval t;
+    t.tv_sec = 100;
+    t.tv_usec =0;
     FD_ZERO(&master);
     //add master socket to set
     FD_SET(parentfd, &master);
@@ -179,6 +188,7 @@ int main(int argc, char **argv) {
                  bzero(buf,BUFSIZE);
                  scanf(" %[^\n]s",buf);
                  printf("hello\n");
+                 printf("%s\n", buf);
                  char* hostname = strtok(buf,"/");
                  char* msg = strtok(NULL,"\n");
                  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
