@@ -143,7 +143,7 @@ int main(int argc, char **argv) {
     fileChunk allPackets[f.noOfChunks+4];
     fileChunk p;
     //printf("%d %d",noOfReceivedPackets,f.noOfChunks);
-    FILE* fp = fopen(f.fileName,"ab");
+    FILE* fp = fopen(f.fileName,"wb");
     while(noOfReceivedPackets<f.noOfChunks)
     {
          n = recvfrom(sockfd, (char*)&p, sizeof(fileChunk), 0,(struct sockaddr *) &clientaddr, &clientlen);

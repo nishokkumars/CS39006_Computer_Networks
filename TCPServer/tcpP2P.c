@@ -70,6 +70,12 @@ typedef struct
   int port_no;
 }user_info;
 
+user_info users[5];
+users[0].name = (char *)"subham";
+users[0].ip = (char *)"10.147.115.60";
+users[0].port_no = 8085;
+
+
 
 void error(char *msg) {
   perror(msg);
@@ -182,6 +188,7 @@ int main(int argc, char **argv) {
     for (i= 0; i < MAXCLIENTS; i++) {
         
         fd = client_socket[i];
+        .
         if (FD_ISSET(fd, &master)) {
             if (fd == STDIN_FILENO) {
                  
@@ -195,6 +202,16 @@ int main(int argc, char **argv) {
                  if (sockfd < 0) 
                     error("ERROR opening socket");
                  /* gethostbyname: get the server's DNS entry */
+                /*struct pollfd timer;
+        		timer.fd = sockfd;
+        		timer.events = POLLIN;
+            	ret = poll(&fd, 1, 1000); // 1 second for timeout*/
+            	for(int i=0;i<5;i++){
+            		if(strcmp(users[i].name, hostname)==0){
+            			hostname = users[i].ip;
+            			break;
+            		}
+            	}
                  struct hostent* server = gethostbyname(hostname);
                  if (server == NULL) {
                       fprintf(stderr,"ERROR, no such host as %s\n", hostname);
