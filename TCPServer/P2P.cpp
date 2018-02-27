@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
   users[1].port_no = 8086;
 
   users[2].name = (char *)"server";
-  users[2].ip = (char *)"10.5.18.69";
+  users[2].ip = (char *)"192.168.122.1";
   users[2].port_no = 8086;
 
   users[3].name = (char *)"praj";
@@ -210,6 +210,19 @@ int main(int argc, char **argv) {
             if (childfd < 0) 
               error((char *)"ERROR on accept");
             FD_SET(childfd, &master);
+            activesocks.push_back(childfd);
+            active newtemp;
+            newtemp.user.ip = inet_ntoa(clientaddr.sin_addr) ;
+            newtemp.user.port_no = ntohs(clientaddr.sin_port);
+            newtemp.user.name=(char*)(malloc(sizeof(100)));
+            time(&newtemp.last_activity);
+            present[childfd] = newtemp;
+            for(int q=0;q<5;q++)
+            {
+                //&& users[q].port_no==newtemp.user.port_no
+                if( strcmp(users[q].ip,newtemp.user.ip)==0 )
+                  strcpy(newtemp.user.name,users[q].name);                 
+            }
             max_fd = max(max_fd, childfd);
             printf("New connection , socket fd is %d , ip is : %s , port : %d \n" , childfd , inet_ntoa(clientaddr.sin_addr) , ntohs(clientaddr.sin_port));
           }
@@ -295,8 +308,8 @@ int main(int argc, char **argv) {
               error((char *)"Error in receive");
             buf[n] = '\0';
             //printf("Message :");
-            //printf("%s\n",buf);          
-            printf("%s messaged %s\n", users[i].name,buf);
+            //printf("%s\n",buf);
+            printf("%s messaged %s\n", present[i].user.name, buf);          
           }
         }
       }
