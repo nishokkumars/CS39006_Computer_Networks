@@ -88,21 +88,21 @@ int main(int argc, char **argv) {
   users[0].ip = (char *)"10.145.170.183";
   users[0].port_no = 8085;
 
-  users[1].name = (char *)"localhost";
-  users[1].ip = (char *)"127.0.0.1";
-  users[1].port_no = 8086;
+  users[1].name = (char *)"aman";
+  users[1].ip = (char *)"10.5.18.69";
+  users[1].port_no = 8082;
 
-  users[2].name = (char *)"server";
-  users[2].ip = (char *)"192.168.122.1";
+  users[2].name = (char *)"praj";
+  users[2].ip = (char *)"10.117.8.245";
   users[2].port_no = 8086;
 
-  users[3].name = (char *)"praj";
-  users[3].ip = (char *)"10.145.194.229";
-  users[3].port_no = 8085;
+  users[3].name = (char *)"arka";
+  users[3].ip = (char *)"10.145.226.116";
+  users[3].port_no = 8084;
 
-  users[4].name = (char *)"avinab";
-  users[4].ip = (char *)"10.145.207.10";
-  users[4].port_no = 8086;
+  users[4].name = (char *)"nishok";
+  users[4].ip = (char *)"10.147.99.212";
+  users[4].port_no = 8084;
 
   ac_users[0].user = users[0];
   ac_users[1].user = users[1];
@@ -205,7 +205,7 @@ int main(int argc, char **argv) {
       for(i=0;i<=max_fd;i++){
         if(FD_ISSET(i,&read_fds)){
           if(i==parentfd){
-            printf("Parent %d\n", fd);
+            //printf("Parent %d\n", fd);
             childfd = accept(parentfd, (struct sockaddr *) &clientaddr, &clientlen);
             if (childfd < 0) 
               error((char *)"ERROR on accept");
@@ -229,7 +229,7 @@ int main(int argc, char **argv) {
           else if(i==STDIN_FILENO){
             bzero(buf,BUFSIZE);
             scanf(" %[^\n]s",buf);
-            printf("%s\n", buf);
+            //printf("%s\n", buf);
             char* hostname = strtok(buf,"/");
             char* msg = strtok(NULL,"\n");
             int sockfd;
@@ -296,7 +296,7 @@ int main(int argc, char **argv) {
             }
           }
           else{
-            printf("Reading %d\n", fd);
+            //printf("Reading %d\n", fd);
             bzero(buf, BUFSIZE);
             n = recv(i,buf,BUFSIZE,0);
             if(n==0){
