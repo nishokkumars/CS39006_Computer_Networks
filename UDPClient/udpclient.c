@@ -29,10 +29,17 @@ typedef struct {
 } fileDetails;
 
 typedef struct {
- 
-   char chunkContents[1024];
+  
    int sequenceNumber;
    int chunkLength;
+
+} header;
+
+typedef struct {
+ 
+   header chunkHeader;
+   char chunkContents[1024];
+
 
 } fileChunk;
 
@@ -40,9 +47,6 @@ void error(char *msg) {
     perror(msg);
     exit(0);
 }
-
-
-
 
 int main(int argc, char **argv) {
     int sockfd, portno, n;
@@ -62,9 +66,10 @@ int main(int argc, char **argv) {
     hostname = argv[1];
     portno = atoi(argv[2]);
     fileName = argv[3];
-
+    struct timeval timeout = {1,0};
     /* socket: create the socket */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO,(char*)&timeout,sizeof(timeout));
     if (sockfd < 0) 
         error("ERROR opening socket");
 
@@ -87,12 +92,8 @@ int main(int argc, char **argv) {
     serveraddr.sin_family = AF_INET;
     bcopy((char *)server->h_addr,(char *)&serveraddr.sin_addr.s_addr, server->h_length);
     serveraddr.sin_port = htons(portno);
-
-
-
     /* get a message from the user */
     bzero(buf, BUFSIZE);
-    
     //printf("Please enter msg: ");
     //fgets(buf, BUFSIZE, stdin);
     FILE *fp = fopen(argv[3],"rb");
@@ -101,7 +102,6 @@ int main(int argc, char **argv) {
         return 1;
     }
     struct stat inputFileInfo;
-
     // Get filesize to calculate total number of fragments and total number of fragment digits
     stat(argv[3], &inputFileInfo);
     int fileSize = inputFileInfo.st_size;
@@ -124,65 +124,70 @@ int main(int argc, char **argv) {
     if (n < 0) 
       error("ERROR in recvfrom");
     printf("Message from server: %s \n",buff);
+
     int noOfSentPackets = 0;
     int prevRead = 1;
-    fileChunk p;
-    while(noOfSentPackets!=f.noOfChunks)
+    fileChunk* filePackets = (fileChunk*)calloc(f.noOfChunks+2,sizeof(fileChunk));
+    bool endOfFile = feof(fp);
+    int k,i;
+    for(k=1;k<=f.noOfChunks && !endOfFile;k++)
     {
-         if(prevRead)
-         { 
-            unsigned int i;char nextChar;
-            bool endOfFile = feof(fp);
-            for (i = 0; i < BUFSIZE && !endOfFile; i++) {
-                nextChar = getc (fp);
-                if (feof(fp)) {
-                    endOfFile = true;
-                    i--;
-                } else {
-                    p.chunkContents[i] = nextChar;
-                }
+       for(i=0;i<BUFSIZE && !endOfFile ; i++)
+       {
+           char nextChar = getc (fp);
+           if (feof(fp)) {
+                    
+               endOfFile = true;
+               i--;
+          } else {
+              
+              filePackets[k].chunkContents[i] = nextChar;
+          
+          }       	   
+       
+       }
+       filePackets[k].chunkContents[i]='\0';
+       filePackets[k].chunkHeader.sequenceNumber = k;
+       filePackets[k].chunkHeader.chunkLength = i;
+    }
+    int base = 1;
+    int nextseqnum = 1;
+    int N = 3;
+    int prevReceived = 0;
+    while(base<=f.noOfChunks)
+    {
+         while(nextseqnum<base+N){
+         	
+         	n = sendto(sockfd, (char*)(&filePackets[nextseqnum]), sizeof(fileChunk), 0, &serveraddr, serverlen);
+            if(base == nextseqnum){
+
+            	//start timer
             }
-            p.chunkContents[i]='\0';
-            p.sequenceNumber = noOfSentPackets+1;
-            p.chunkLength = i;
-            prevRead = 0;
+            nextseqnum++;
+         }
+         int ack;
+
+         n = recvfrom(sockfd,(char*)&ack,sizeof(int),0,&serveraddr,&serverlen);
+         if (n <= 0) {
             
+            //start timer
+         	int temp;
+         	for(temp=base;temp<nextseqnum;temp++)
+         	{
+         		n = sendto(sockfd,(char*)(&filePackets[temp]),sizeof(fileChunk),0,&serveraddr,serverlen);
+         	}
          }
-         n = sendto(sockfd, (char*)(&p), sizeof(p), 0, &serveraddr, serverlen);
-         if (n < 0) 
-           error("ERROR in sendto");
-         char buf3[50];
-         bzero(buf3,50);
-                  struct pollfd fd;
-         int ret;
-
-           fd.fd = sockfd; // your socket handler 
-           fd.events = POLLIN;
-            ret = poll(&fd, 1, 1000); // 1 second for timeout
-          switch (ret) {
-          case -1:
-             // Error
-            break;
-          case 0:
-          prevRead=0;
-          break;
-          default:
-         n = recvfrom(sockfd, buf3, 15, 0, &serveraddr, &serverlen);
-         if (n < 0) 
-            error("ERROR in recvfrom");
-         char buf1[50]="ACK";
-         char buf2[10];
-         sprintf(buf2,"%d",noOfSentPackets+1);
-         strcat(buf1,buf2);
-         printf("Message from server: %s\n",buf3);
-         if(strcmp(buf1,buf3)==0)
+         printf("Message from server: ACK%d\n",ack);
+         base = ack + 1;
+         N += ack-prevReceived;
+         prevReceived = ack;
+         if(base == nextseqnum )
          {
-            noOfSentPackets++;
-            prevRead = 1;
-         } // get your data
-        break;
+            	 N*=2;//stop timer
+         }else{
+            	 
+            	 N/=2;//start timer
          }
-
     }
     char buffer[1024];
     n = recvfrom(sockfd, buffer, 1024, 0, &serveraddr, &serverlen);
@@ -204,7 +209,9 @@ int main(int argc, char **argv) {
     }
     printf("%s\n",buffer1);
     printf("%s\n",buffer);
-    if(strcmp(buffer1,buffer)==0)
+    char* tokenPtr = strtok(buffer, " ,\t\n"); // tokenise first word
+    char* tokenPtr1 = strtok(buffer1, " ,\t\n");
+    if(strcmp(tokenPtr,tokenPtr1)==0)
     {
         printf("MD5 matched\n");
     }
