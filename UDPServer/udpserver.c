@@ -30,10 +30,16 @@ typedef struct {
 } fileDetails;
 
 typedef struct {
+  
+  int sequenceNumber;
+  int chunkLength;
+
+} header;
+
+typedef struct {
  
+   header chunkHeader;
    char chunkContents[1024];
-   int sequenceNumber;
-   int chunkLength;
 
 } fileChunk;
  
@@ -57,11 +63,12 @@ int main(int argc, char **argv) {
   /* 
    * check command line arguments 
    */
-  if (argc != 2) {
-    fprintf(stderr, "usage: %s <port_for_server>\n", argv[0]);
+  if (argc != 3) {
+    fprintf(stderr, "usage: %s <port_for_server> <drop-probability>\n", argv[0]);
     exit(1);
   }
   portno = atoi(argv[1]);
+  double drop_probability = atof(argv[2]);
 
   /* 
    * socket: create the socket 
@@ -105,18 +112,15 @@ int main(int argc, char **argv) {
 
   while(1)
     {
+    
+    srand(time(NULL));
     fileDetails f;
     bzero(buf, BUFSIZE);
     n = recvfrom(sockfd, (char*)&f, sizeof(fileDetails), 0,(struct sockaddr *) &clientaddr, &clientlen);
     if (n < 0)
       error("ERROR in recvfrom");
-    int noOfReceivedPackets = 0;
-    int packetsReceived[f.noOfChunks+4];
+    if(f.fileSize==0 && f.noOfChunks == 0)continue;
     int i;
-    for(i=1;i<=f.noOfChunks;++i)
-      packetsReceived[i]=0;
-    
-
     /* 
      * gethostbyaddr: determine who sent the datagram
      */
@@ -130,7 +134,6 @@ int main(int argc, char **argv) {
     printf("server received datagram from %s (%s)\n", 
 	   hostp->h_name, hostaddrp);
     printf("server received %d/%d bytes: %s\n", sizeof(fileDetails), f.noOfChunks, f.fileName);
-   
     /* 
      * sendto: echo the input back to the client 
      */
@@ -140,52 +143,37 @@ int main(int argc, char **argv) {
     n = sendto(sockfd, buf, strlen(buf), 0,(struct sockaddr *) &clientaddr, clientlen);
     if (n < 0) 
       error("ERROR in sendto");
-    fileChunk allPackets[f.noOfChunks+4];
     fileChunk p;
     //printf("%d %d",noOfReceivedPackets,f.noOfChunks);
     FILE* fp = fopen(f.fileName,"wb");
-    while(noOfReceivedPackets<f.noOfChunks)
+    int expectedseqnum = 1;
+    int prevAck = 0;
+    while(expectedseqnum<=f.noOfChunks)
     {
          n = recvfrom(sockfd, (char*)&p, sizeof(fileChunk), 0,(struct sockaddr *) &clientaddr, &clientlen);
-         int seqNo = p.sequenceNumber;
-         if(packetsReceived[seqNo])
+         int seqNo = p.chunkHeader.sequenceNumber;
+         if(seqNo == expectedseqnum)
          {
-            memset(buf,0,strlen(buf));
-            strcpy(buf,"ACK");
-            char seqId[10];
-            sprintf(seqId,"%d",seqNo);
-            strcat(buf,seqId);
-
-           n = sendto(sockfd, buf, strlen(buf), 0,(struct sockaddr *) &clientaddr, clientlen);
-           if (n < 0) 
-             error("ERROR in sendto");
-        }
-         else
-         {
-             noOfReceivedPackets++;
-             hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-             if (hostp == NULL)
-             error("ERROR on gethostbyaddr");
-             hostaddrp = inet_ntoa(clientaddr.sin_addr);
-             if (hostaddrp == NULL)
-             error("ERROR on inet_ntoa\n");
-             printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-             printf("server received %d/%d bytes: SequenceNumber:%d\n", sizeof(fileChunk), n, p.sequenceNumber);
-             unsigned int i;
-             for(i = 0; i < p.chunkLength; ++i) {
+            unsigned int i;
+            for(i = 0; i < p.chunkHeader.chunkLength; ++i) {
                 fputc(p.chunkContents[i],fp);
-             }
-             packetsReceived[seqNo]=1;
-             char buf1[20];
-             bzero(buf1,20);
-             strcpy(buf1,"ACK");
-             char seqId[10];
-             sprintf(seqId,"%d",seqNo);
-             strcat(buf1,seqId);
-             buf1[strlen(buf1)]='\0';
-             n = sendto(sockfd, buf1, strlen(buf1), 0,(struct sockaddr *) &clientaddr, clientlen);
-             if (n < 0) 
-                error("ERROR in sendto");
+            }
+            int t = drop_probability*1000;
+            int no = rand()%1000;
+            if(no<=t)
+            {
+              n = sendto(sockfd, (char*)&expectedseqnum, sizeof(int), 0,(struct sockaddr *) &clientaddr, clientlen);
+            }  
+            prevAck = expectedseqnum;
+            expectedseqnum++;
+         }else{
+
+            int t = drop_probability*1000;
+            int no = rand()%1000;
+            if(no<=t)
+            {
+              n=sendto(sockfd, (char*)&prevAck,sizeof(int),0,(struct sockaddr *) &clientaddr, clientlen);
+            }
          }
      }
      fclose(fp);
@@ -209,8 +197,6 @@ int main(int argc, char **argv) {
     if (n < 0) 
         error("ERROR in sendto");
 
-
-    }
-
+  }
   return 0;
 }
