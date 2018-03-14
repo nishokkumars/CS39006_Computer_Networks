@@ -54,13 +54,10 @@ struct dataPacket{
 
 };
 
+char senderBuffer[SENDER_BUFFER];
+char receiverBuffer[RECV_BUFFER];
+vector< pair< int, string > > recvBuffer;
 
-vector< dataPacket > recvBuffer;
-
-bool compare(const dataPacket& a,const dataPacket& b)
-{
-	return a.packetHeader.sequenceNumber < b.packetHeader.sequenceNumber;
-}
 int udp_send(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPacket fileChunk){
 	/* Sends udp packets - sending file details */
     int n = sendto(sockfd, (char*)(&fileChunk), sizeof(fileChunk), 0, ((sockaddr*)&serveraddr), serverlen);
@@ -84,7 +81,7 @@ int create_data_packet(int sockfd,struct sockaddr_in serveraddr,int serverlen,ch
 
 }
 
-int appRecv(dataPacket d){
+int appRecv(){
 	/* calls recvbuffer_handle and gets data from there
 	is blocked if no data in buffer */
 	int fd = creat("ReceivedData.txt",0666);
@@ -100,36 +97,42 @@ int send_ack(int sockfd,struct sockaddr_in serveraddr,int serverlen, int seqNo){
 
 }
 
-int recvbuffer_handle(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPacket d){
+int recvbuffer_handle(int sockfd,struct sockaddr_in serveraddr,int serverlen,char* buffer,int lastRecvd){
 	/* handles receiver buffer */
 	/* calls send_ack() */
-	lastRecvd = d.packetHeader.sequenceNumber;
 	if(lastRecvd==expectedRecvd){
+
 		int counter = expectedRecvd;
-		vector<dataPacket>::iterator ptr;
+		vector< pair< int , string > >::iterator ptr;
 		for(ptr=recvBuffer.begin();ptr<recvBuffer.end();ptr++)
 		{
-			 sort(recvBuffer.begin(),recvBuffer.end(),compare);
+			 sort(recvBuffer.begin(),recvBuffer.end());
              recvBuffer.erase(unique(recvBuffer.begin(), recvBuffer.end()), recvBuffer.end());
-			 if(ptr->packetHeader.sequenceNumber == counter)
+			 if((*ptr).first == counter)
 			 {
 			 	 send_ack(sockfd,serveraddr,serverlen,counter);
 			 	 counter++;
-			 	 appRecv(*ptr);
+			 	 if(strlen(receiverBuffer)+(*ptr).second.length()>RECV_BUFFER)break;
+			 	 char temp[MSS+5];
+			 	 strcpy(temp,(*ptr).second.c_str());
+			 	 strcat(receiverBuffer,temp);
 			 	 recvBuffer.erase(recvBuffer.begin());
 			 }
 			 else break;
 		} 
-		
+		expectedRecvd = counter;
+	
 	}
 	else if(lastRecvd > expectedRecvd){
 
-        recvBuffer.push_back(d);
-		send_ack(sockfd,serveraddr,serverlen, expectedRecvd);
-        sort(recvBuffer.begin(),recvBuffer.end(),compare);
+        recvBuffer.push_back(make_pair(lastRecvd,string(buffer)));
+		send_ack(sockfd,serveraddr,serverlen,expectedRecvd);
+        sort(recvBuffer.begin(),recvBuffer.end());
         recvBuffer.erase(unique(recvBuffer.begin(), recvBuffer.end()), recvBuffer.end());
-		recv_window_free = recv_window_free-strlen(d.packetContents);
+		recv_window_free = recv_window_free-strlen(buffer);
+	
 	}
+	return 0;
 }
 
 int update_window(dataPacket d){
@@ -139,7 +142,7 @@ int update_window(dataPacket d){
 		cwnd = cwnd+MSS;
 	else
 		cwnd = cwnd+(MSS*MSS)/cwnd;
-
+	return cwnd;
 }
 
 
@@ -150,7 +153,7 @@ int parse_packets(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPac
 		update_window(d);
 	}
 	else{
-		recvbuffer_handle(sockfd, serveraddr, serverlen, d);
+		recvbuffer_handle(sockfd, serveraddr, serverlen,d.packetContents,d.packetHeader.sequenceNumber);
 	}
 
 }
@@ -167,59 +170,31 @@ int rate_control(){
 	calls create packet */ 
 	/* If timeout occurs make cwnd = 1mss and half the ssthresh 
 	if triple ack then make ssthresh half and start from there */
+
 }
 
-int sendbuffer_handle(){
+int sendbuffer_handle(char* buffer){
 	/* maintains queue of sender packets
 	calls rate control */
-    /*while(nextseqnum<base+N){
-         	
-         	n = sendto(sockfd, (char*)(&filePackets[nextseqnum]), sizeof(fileChunk), 0, &serveraddr, serverlen);
-            if(base == nextseqnum){
-
-            	//start timer
-            }
-            nextseqnum++;
-         }
-         int ack;
-
-         n = recvfrom(sockfd,(char*)&ack,sizeof(int),0,&serveraddr,&serverlen);
-         if (n <= 0) {
-            
-            //start timer
-         	int temp;
-         	for(temp=base;temp<nextseqnum;temp++)
-         	{
-         		n = sendto(sockfd,(char*)(&filePackets[temp]),sizeof(fileChunk),0,&serveraddr,serverlen);
-         	}
-         }
-         printf("Message from server: ACK%d\n",ack);
-         base = ack + 1;
-         N += ack-prevReceived;
-         prevReceived = ack;
-         if(base == nextseqnum )
-         {
-            	 N*=2;//stop timer
-         }else{
-            	 
-            	 N/=2;//start timer
-         }*/
-
+	int i = strlen(senderBuffer);
+	int k = 0;
+	if(strlen(senderBuffer)>=SENDER_BUFFER)return -1;
+	while(i<SENDER_BUFFER && k<strlen(buffer))
+	{
+		senderBuffer[i++] = buffer[k++];
+	}
+	senderBuffer[i] = '\0';
+	return 0;
 }
 
 
 int appSend(){
+	
 	/* sends data directly to sender buffer 
 	calls sendbuffer_handle */
+
+
 }
-
-
-
-
-
-
-
-
 
 int main(){
   
