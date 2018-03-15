@@ -150,95 +150,6 @@ int recvbuffer_handle(int sockfd,struct sockaddr_in serveraddr,int serverlen,cha
 	return 0;
 }
 
-int rate_control(int sockfd,struct sockaddr_in serveraddr,int serverlen){
-	/* handles flow and congestion control
-	calls create packet */ 
-	/* If timeout occurs make cwnd = 1mss and half the ssthresh 
-	if triple ack then make ssthresh half and start from there */
-    int N = cwnd;
-    int n;
-    int temp2 = tempp;
-    while(base<=int((ceil(1.0*strlen(senderBuffer)/MSS))))
-    {
-         while(nextseqnum<base+N){
-            
-         	char *to_be_sent_data = (char *)malloc(MSS*sizeof(char));
-         	int lastSeqSent = nextseqnum-1;
-         	int noOfBytesSent = lastSeqSent*MSS;
-         	int temp1 = min(MSS,max((int)strlen(senderBuffer)-noOfBytesSent,0));
-         	strncpy(to_be_sent_data,senderBuffer+tempp,temp1);
-         	n = create_data_packet(sockfd, serveraddr, serverlen,to_be_sent_data,nextseqnum);
-            if(base == nextseqnum){
-
-            	//start timer
-            	time(&startTime);
-            }
-            nextseqnum++;
-            tempp+=temp1;
-         }
-    int flag = 0;
-    int tripleDupAck,timeout;
-    int ack;
-    n = recvfrom(sockfd,(char*)&ack,sizeof(int),0,(sockaddr*)&serveraddr,(socklen_t*)&serverlen);
-    if(n<=0)flag=1;
-    /*while(1)
-    {
-        time(&endTime);
-        if(endTime-startTime>=N*TIMEOUT_VAL)
-        {
-        	flag = 1;
-        	break;
-        }
-        else
-        	break;
-
-    }*/
-    if(flag==1){
-    	int ptr;
-    	timeout = 1;
-        char *to_be_sent_data = (char *)malloc(MSS*sizeof(char));
-        for(ptr = base; ptr < nextseqnum; ptr++){
-        	bzero(to_be_sent_data,MSS);
-	         int lastSeqSent = ptr-1;
-	         int noOfBytesSent = lastSeqSent*MSS;
-	         int temp1 = min(MSS,(int)strlen(senderBuffer)-noOfBytesSent);
-	         strncpy(to_be_sent_data,senderBuffer+temp2,temp1);
-        	n = create_data_packet(sockfd, serveraddr, serverlen,to_be_sent_data,ptr);
-        	temp2+=temp1;
-        }
-
-
-    }
-    //receive signal from window_update
-    //update window
-    if(prevReceived == ack)dupAckCount[prevReceived]++;
-    if(dupAckCount[prevReceived] == 3)tripleDupAck = 1;
-    prevReceived = ack;
-    if( base == nextseqnum )
-    {      
-        ;   
-    
-    }else{
-         
-        if(timeout){
-
-		ssthresh = ssthresh/2;
-		cwnd = MSS;
-		slowStart = 1;
-	
-	    }
-	    else 	if(tripleDupAck)
-	   {
-		 ssthresh/=2;
-		 cwnd = ssthresh;
-		 slowStart = 0;
-	
-	   }
-    }
-    }
-
-}
-
 int update_window(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPacket d){
 	/* updates window size on receiving the acks
 	calls rate control */
@@ -274,111 +185,114 @@ int udp_receive(int sockfd,struct sockaddr_in clientaddr,int clientlen,dataPacke
     return parse_packets(sockfd, clientaddr, clientlen, fileChunk);
 }
 
+int main(int argc, char **argv) {
+  int sockfd; /* socket file descriptor - an ID to uniquely identify a socket by the application program */
+  int portno; /* port to listen on */
+  int clientlen; /* byte size of client's address */
+  struct sockaddr_in serveraddr; /* server's addr */
+  struct sockaddr_in clientaddr; /* client addr */
+  struct hostent *hostp; /* client host info */
+  char buf[BUFSIZE]; /* message buf */
+  char *hostaddrp; /* dotted decimal host addr string */
+  int optval; /* flag value for setsockopt */
+  int n; /* message byte size */
+
+  /* 
+   * check command line arguments 
+   */
+  if (argc != 3) {
+    fprintf(stderr, "usage: %s <port_for_server> <drop-probability>\n", argv[0]);
+    exit(1);
+  }
+  portno = atoi(argv[1]);
+  double drop_probability = atof(argv[2]);
+
+  /* 
+   * socket: create the socket 
+   */
+  sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sockfd < 0) 
+    error("ERROR opening socket");
+
+  /* setsockopt: Handy debugging trick that lets 
+   * us rerun the server immediately after we kill it; 
+   * otherwise we have to wait about 20 secs. 
+   * Eliminates "ERROR on binding: Address already in use" error. 
+   */
+  optval = 1;
+  setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 
+	     (const void *)&optval , sizeof(int));
 
 
-int sendbuffer_handle(char* buffer){
-	/* maintains queue of sender packets
-	calls rate control */
-	int i = strlen(senderBuffer);
-	int k = 0;
-	if(strlen(senderBuffer)>=SENDER_BUFFER)return 0;
-	while(i<SENDER_BUFFER && k<strlen(buffer))
-	{
-		senderBuffer[i++] = buffer[k++];
-	}
-	senderBuffer[i] = '\0';
-	return k;
-}
+  /*
+   * build the server's Internet address
+   */
+  bzero((char *) &serveraddr, sizeof(serveraddr));
+  serveraddr.sin_family = AF_INET;
+  serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  serveraddr.sin_port = htons((unsigned short)portno);
 
+  /* 
+   * bind: associate the parent socket with a port 
+   */
+  if (bind(sockfd, (struct sockaddr *) &serveraddr, 
+	   sizeof(serveraddr)) < 0) 
+    error("ERROR on binding");
 
-int appSend(char *filename){
-	
-	/* sends data directly to sender buffer 
-	calls sendbuffer_handle */
-    int sockfd, portno, n;
-    int serverlen;
-    struct sockaddr_in serveraddr;
-    struct addrinfo *my_info,hints;
-    struct hostent *server;
-    char *hostname;
-    char *fileName;
-    char buf[BUFSIZE];
+  /* 
+   * main loop: wait for a datagram, then echo it
+   */
+  clientlen = sizeof(clientaddr);
+    /*
+     * recvfrom: receive a UDP datagram from a client
+     */
 
-    /* check command line arguments */
-    hostname = "127.0.0.1";
-    portno = 8080;
-    struct timeval timeout = {1,0};
-    /* socket: create the socket */
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO,(char*)&timeout,sizeof(timeout));
-    if (sockfd < 0) 
-        perror("ERROR opening socket");
-
-    /* gethostbyname: get the server's DNS entry */
-    server = gethostbyname(hostname);
-    if (server == NULL) {
-        fprintf(stderr,"ERROR, no such host as %s\n", hostname);
-        exit(0);
-    }
-   
-    memset (&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_flags = AI_PASSIVE;
-
-    getaddrinfo(NULL, filename , &hints, &my_info);
-
-    /* build the server's Internet address */
-    bzero((char *) &serveraddr, sizeof(serveraddr));
-    serveraddr.sin_family = AF_INET;
-    bcopy((char *)server->h_addr,(char *)&serveraddr.sin_addr.s_addr, server->h_length);
-    serveraddr.sin_port = htons(portno);
-    /* get a message from the user */
-    bzero(buf, BUFSIZE);
-    serverlen = sizeof(serveraddr);
-	FILE *fp = fopen(filename,"rb");
-	if (fp == NULL) {
-       printf("File does not exist \n");
-       return 1;
-    }
-    struct stat inputFileInfo;
-    // Get filesize to calculate total number of fragments and total number of fragment digits
-    stat(filename, &inputFileInfo);
-    int fileSize = inputFileInfo.st_size;
-    int noOfChunks = fileSize%1024 == 0 ? fileSize/1024 : (fileSize/1024+1);
-    char *buffer= (char *)malloc((MSS+1)*sizeof(char));
-    bool endOfFile = feof(fp);
-    int k,l;
-    for(l=0;l<noOfChunks;l++){
-    	for(k=0;k<MSS && !endOfFile;k++){
-    		char nextChar = getc(fp);
-    		if(feof(fp)){
-    			endOfFile = true;
-    			k--;
-    		}
-    		else{
-    			buffer[k] = nextChar;
-    		}
-    	}
-    	buffer[k]='\0';
-    	sendbuffer_handle(buffer);
-    	rate_control(sockfd,serveraddr,serverlen);
-    }
-
-}
-
-int main(){
-
-	char *filename = (char *)malloc(1000*sizeof(char));
-	cout << "Enter filename" << endl;
-	cin >> filename ;
+  while(1)
+    {
+    
+    srand(time(NULL));
+    receiverBuffer[0] = '\0';
 	cwnd = 1;
 	base = 1;
 	expectedRecvd = 1;
 	nextseqnum = 1;
 	lastRecvd = 0;
 	ssthresh = 340*1024;
-	appSend(filename);
-  
-   return 0;
+    dataPacket p;
+    //printf("%d %d",noOfReceivedPackets,f.noOfChunks);
+    FILE* fp = fopen("test.cpp","wb");
+    int expectedseqnum = 1;
+    int prevAck = 0;
+    while(expectedseqnum<=5)
+    {
+         udp_receive(sockfd,clientaddr,clientlen,p);
+         puts(p.packetContents);
+         int seqNo = p.packetHeader.sequenceNumber;
+         printf("%d\n",seqNo);
+         expectedseqnum++;
+     }
+     fclose(fp);
+     cout<<receiverBuffer<<endl;
+     char command[1024];
+     strcpy(command,"md5sum ");
+     strcat(command,"test.cpp");
+    FILE *md5_cmd = popen(command, "r");
+    if (md5_cmd == NULL) {
+        fprintf(stderr, "popen(3) error");
+        exit(EXIT_FAILURE);
+    }
+
+    static char buffer[1024];
+    size_t n;
+
+    while ((n = fread(buffer, 1, sizeof(buffer)-1, md5_cmd)) > 0) {
+        buffer[n] = '\0';
+        break;
+    }
+    n = sendto(sockfd, buffer, strlen(buffer), 0,(struct sockaddr *) &clientaddr, (socklen_t)clientlen);
+    if (n < 0) 
+        error("ERROR in sendto");
+
+  }
+  return 0;
 }
