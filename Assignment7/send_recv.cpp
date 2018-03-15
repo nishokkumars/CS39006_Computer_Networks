@@ -18,6 +18,7 @@
 #include <time.h>
 #include <bits/stdc++.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #define MSS 1024 // to divide into chunks of 1 KB
 #define SENDER_BUFFER 1024*1024 // Buffer size
@@ -39,6 +40,13 @@ int prevReceived;
 int ack;
 time_t startTime,endTime;
 map< int, int > dupAckCount;
+
+pthread_mutex_t slock;// Sender lock
+pthread_mutex_t rlock; // Receiver lock
+pthread_mutex_t send_buffer_lock; 
+pthread_mutex_t recv_buffer_lock;
+pthread_mutex_t other_var_lock;
+
 
 struct header{
   
@@ -62,6 +70,17 @@ struct dataPacket{
    }
 
 };
+
+typedef struct{
+    int sockfd;
+    struct sockaddr_in serveraddr;
+    int serverlen;
+}socket_details;
+
+typedef struct{
+    socket_details sock;
+    dataPacket d;
+}udp_recv_str;
 
 char senderBuffer[SENDER_BUFFER];
 char receiverBuffer[RECV_BUFFER];
@@ -114,6 +133,7 @@ int send_ack(int sockfd,struct sockaddr_in serveraddr,int serverlen, int seqNo){
 int recvbuffer_handle(int sockfd,struct sockaddr_in serveraddr,int serverlen,char* buffer,int lastRecvd){
 	/* handles receiver buffer */
 	/* calls send_ack() */
+  pthread_mutex_lock(&recv_buffer_lock);
 	if(lastRecvd==expectedRecvd){
         
 		int counter = expectedRecvd;
@@ -140,45 +160,51 @@ int recvbuffer_handle(int sockfd,struct sockaddr_in serveraddr,int serverlen,cha
 	
 	}
 	else if(lastRecvd > expectedRecvd){
-
-        recvBuffer.push_back(make_pair(lastRecvd,string(buffer)));
+    recvBuffer.push_back(make_pair(lastRecvd,string(buffer)));
 		send_ack(sockfd,serveraddr,serverlen,expectedRecvd);
-        sort(recvBuffer.begin(),recvBuffer.end());
-        recvBuffer.erase(unique(recvBuffer.begin(), recvBuffer.end()), recvBuffer.end());
+    sort(recvBuffer.begin(),recvBuffer.end());
+    recvBuffer.erase(unique(recvBuffer.begin(), recvBuffer.end()), recvBuffer.end());
 		recv_window_free = recv_window_free-strlen(buffer);
-	
 	}
+  pthread_mutex_unlock(&recv_buffer_lock);
 	return 0;
 }
 
-int rate_control(int sockfd,struct sockaddr_in serveraddr,int serverlen){
+void * rate_control(void * param){
 	/* handles flow and congestion control
 	calls create packet */ 
 	/* If timeout occurs make cwnd = 1mss and half the ssthresh 
 	if triple ack then make ssthresh half and start from there */
+    socket_details * sock = (socket_details *)param;
+    int sockfd = sock->sockfd;
+    struct sockaddr_in serveraddr = sock->serveraddr;
+    int serverlen = sock->serverlen;
+    /* 
+    Used lock here
+     */
+    pthread_mutex_lock(&other_var_lock);
     int N = min(cwnd,max(recv_window_free,0));
     int n;
     int temp2 = tempp;
+    pthread_mutex_unlock(&other_var_lock);
     while(base<=int((ceil(1.0*strlen(senderBuffer)/MSS))))
     {
-         while(nextseqnum<base+N){
-            
-         	char *to_be_sent_data = (char *)malloc(MSS*sizeof(char));
-         	int lastSeqSent = nextseqnum-1;
-         	int noOfBytesSent = lastSeqSent*MSS;
-         	int temp1 = min(MSS,max((int)strlen(senderBuffer)-noOfBytesSent,0));
-         	strncpy(to_be_sent_data,senderBuffer+tempp,temp1);
-         	n = create_data_packet(sockfd, serveraddr, serverlen,to_be_sent_data,nextseqnum);
-            if(base == nextseqnum){
-
-            	//start timer
-            	time(&startTime);
-            }
-            nextseqnum++;
-            tempp+=temp1;
-         }
-    int flag = 0;
-    int tripleDupAck,timeout;
+      while(nextseqnum<base+N){
+        char *to_be_sent_data = (char *)malloc(MSS*sizeof(char));
+        int lastSeqSent = nextseqnum-1;
+        int noOfBytesSent = lastSeqSent*MSS;
+        int temp1 = min(MSS,max((int)strlen(senderBuffer)-noOfBytesSent,0));
+        strncpy(to_be_sent_data,senderBuffer+tempp,temp1);
+        n = create_data_packet(sockfd, serveraddr, serverlen,to_be_sent_data,nextseqnum);
+        if(base == nextseqnum){
+          //start timer
+          time(&startTime);
+        }
+        nextseqnum++;
+        tempp+=temp1;
+      }
+      int flag = 0;
+      int tripleDupAck,timeout;
     /*while(1)
     {
         time(&endTime);
@@ -218,35 +244,49 @@ int rate_control(int sockfd,struct sockaddr_in serveraddr,int serverlen){
     
     }else{
          
-        if(timeout){
-
-		ssthresh = ssthresh/2;
-		cwnd = MSS;
-		slowStart = 1;
-	
-	  }
+      if(timeout){
+        /* used lock here */
+        pthread_mutex_lock(&other_var_lock);
+  		  ssthresh = ssthresh/2;
+  		  cwnd = MSS;
+  		  slowStart = 1;
+        pthread_mutex_unlock(&other_var_lock);
+	   }
 	    else if(tripleDupAck)
 	   {
-		 ssthresh/=2;
-		 cwnd = ssthresh;
-		 slowStart = 0;
-	
+      /* Used lock here */
+       pthread_mutex_lock(&other_var_lock);
+  		 ssthresh/=2;
+  		 cwnd = ssthresh;
+  		 slowStart = 0;
+       pthread_mutex_unlock(&other_var_lock);
 	   }
     }
-    }
+  }
 
 }
 
 int update_window(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPacket d){
 	/* updates window size on receiving the acks
 	calls rate control */
-	if(slowStart)
+  /*
+  Used lock here 
+  */
+	if(slowStart){
+    pthread_mutex_lock(&other_var_lock);
 		cwnd = cwnd+MSS;
-	else
+    pthread_mutex_unlock(&other_var_lock);
+  }
+	else{
+    pthread_mutex_lock(&other_var_lock);
 		cwnd = cwnd+(MSS*MSS)/cwnd;
+    pthread_mutex_lock(&other_var_lock);
+  }
 	//get lock
-    ack = d.packetHeader.sequenceNumber;
-    recv_window_free = d.packetHeader.recv_window_left;
+  pthread_mutex_lock(&other_var_lock);
+  ack = d.packetHeader.sequenceNumber;
+  recv_window_free = d.packetHeader.recv_window_left;
+  pthread_mutex_unlock(&other_var_lock);
 	//unlock
 	//rate_control(sockfd,serveraddr, serverlen);
 	return cwnd;
@@ -266,11 +306,19 @@ int parse_packets(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPac
 
 }
 
-int udp_receive(int sockfd,struct sockaddr_in clientaddr,int clientlen,dataPacket fileChunk){
+void * udp_receive(void *param){
 	/* Sends udp packets - sending file details*/
+  /* 
+  Not sure of the locks here 
+  */
+    udp_recv_str * recvd_details = (udp_recv_str *)param;
+    int sockfd = recvd_details->sock.sockfd;
+    struct sockaddr_in clientaddr = recvd_details->sock.serveraddr;
+    int clientlen = recvd_details->sock.serverlen;
+    dataPacket fileChunk = recvd_details->d;
     int n = recvfrom(sockfd, (char*)&fileChunk, sizeof(fileChunk), 0,(struct sockaddr *) &clientaddr, (socklen_t*)&clientlen);
     if(n<0)return 0;
-    return parse_packets(sockfd, clientaddr, clientlen, fileChunk);
+    parse_packets(sockfd, clientaddr, clientlen, fileChunk);
 }
 
 
@@ -281,30 +329,72 @@ int sendbuffer_handle(char* buffer){
 	int i = strlen(senderBuffer);
 	int k = 0;
 	if(strlen(senderBuffer)>=SENDER_BUFFER)return 0;
+
+    /* 
+    Used lock Here
+     */
+    pthread_mutex_lock(&send_buffer_lock);
 	while(i<SENDER_BUFFER && k<strlen(buffer))
 	{
 		senderBuffer[i++] = buffer[k++];
 	}
 	senderBuffer[i] = '\0';
+    pthread_mutex_unlock(&send_buffer_lock);
 	return k;
 }
 
 
-int appSend(char *filename){
+int appSend(socket_details sock_det, char * buffer2){
+	/*
+     How to use lock here I am not sure
+      so please look into this 
+      */
 	
-	/* sends data directly to sender buffer 
-	calls sendbuffer_handle */
+	 FILE *fp = fopen(buffer2,"rb");
+	 if (fp == NULL) {
+       printf("File does not exist \n");
+       return 1;
+    }
+    struct stat inputFileInfo;
+    // Get filesize to calculate total number of fragments and total number of fragment digits
+    stat(buffer2, &inputFileInfo);
+    int fileSize = inputFileInfo.st_size;
+    int noOfChunks = fileSize%1024 == 0 ? fileSize/1024 : (fileSize/1024+1);
+    char *buffer= (char *)malloc((MSS+1)*sizeof(char));
+    bool endOfFile = feof(fp);
+    int k,l;
+    for(l=0;l<noOfChunks;l++){
+    	for(k=0;k<MSS && !endOfFile;k++){
+    		char nextChar = getc(fp);
+    		if(feof(fp)){
+    			endOfFile = true;
+    			k--;
+    		}
+    		else{
+    			buffer[k] = nextChar;
+    		}
+    	}
+    	buffer[k]='\0';
+    	sendbuffer_handle(buffer);
+    	//rate_control((void *)sock_det);
+    }
+
+}
+
+int main(){
+    /* sends data directly to sender buffer 
+    calls sendbuffer_handle */
     int sockfd, portno, n;
     int serverlen;
     struct sockaddr_in serveraddr;
     struct addrinfo *my_info,hints;
     struct hostent *server;
     char *hostname;
-    char *fileName;
+    //char *fileName;
     char buf[BUFSIZE];
 
     /* check command line arguments */
-    hostname = "127.0.0.1";
+    hostname = (char *)"127.0.0.1";
     portno = 8080;
     struct timeval timeout = {1,0};
     /* socket: create the socket */
@@ -325,48 +415,43 @@ int appSend(char *filename){
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags = AI_PASSIVE;
 
-    getaddrinfo(NULL, filename , &hints, &my_info);
+    // Check this 8080 thing 
+    getaddrinfo(NULL, (char*)"8080" , &hints, &my_info);
 
     /* build the server's Internet address */
     bzero((char *) &serveraddr, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
     bcopy((char *)server->h_addr,(char *)&serveraddr.sin_addr.s_addr, server->h_length);
     serveraddr.sin_port = htons(portno);
-    /* get a message from the user */
     bzero(buf, BUFSIZE);
     serverlen = sizeof(serveraddr);
-	FILE *fp = fopen(filename,"rb");
-	if (fp == NULL) {
-       printf("File does not exist \n");
-       return 1;
-    }
-    struct stat inputFileInfo;
-    // Get filesize to calculate total number of fragments and total number of fragment digits
-    stat(filename, &inputFileInfo);
-    int fileSize = inputFileInfo.st_size;
-    int noOfChunks = fileSize%1024 == 0 ? fileSize/1024 : (fileSize/1024+1);
-    char *buffer= (char *)malloc((MSS+1)*sizeof(char));
-    bool endOfFile = feof(fp);
-    int k,l;
-    for(l=0;l<noOfChunks;l++){
-    	for(k=0;k<MSS && !endOfFile;k++){
-    		char nextChar = getc(fp);
-    		if(feof(fp)){
-    			endOfFile = true;
-    			k--;
-    		}
-    		else{
-    			buffer[k] = nextChar;
-    		}
-    	}
-    	buffer[k]='\0';
-    	sendbuffer_handle(buffer);
-    	rate_control(sockfd,serveraddr,serverlen);
-    }
+    /* get a message from the user */
 
-}
-
-int main(){
+    if (pthread_mutex_init(&rlock, NULL) != 0)
+    {
+        printf("\n window mutex init has failed\n");
+        return 1;
+    }
+    if (pthread_mutex_init(&slock, NULL) != 0)
+    {
+        printf("\n sender mutex init has failed\n");
+        return 1;
+    }
+    if (pthread_mutex_init(&other_var_lock, NULL) != 0)
+    {
+        printf("\n receiver  mutex init has failed\n");
+        return 1;
+    }
+    if (pthread_mutex_init(&send_buffer_lock, NULL) != 0)
+    {
+        printf("\n receiver  mutex init has failed\n");
+        return 1;
+    }
+    if (pthread_mutex_init(&recv_buffer_lock, NULL) != 0)
+    {
+        printf("\n receiver  mutex init has failed\n");
+        return 1;
+    }
 
 	char *filename = (char *)malloc(1000*sizeof(char));
 	cout << "Enter filename" << endl;
@@ -377,7 +462,22 @@ int main(){
 	nextseqnum = 1;
 	lastRecvd = 0;
 	ssthresh = 340*1024;
-	appSend(filename);
+    socket_details sock_det;
+    udp_recv_str temp_recv;
+    sock_det.sockfd = sockfd;
+    sock_det.serveraddr = serveraddr;
+    sock_det.serverlen = serverlen;
+    temp_recv.sock = sock_det;
+    pthread_t udp_recv_thread, congestion_control_thread;
+    pthread_create(&udp_recv_thread, NULL, udp_receive,&temp_recv );
+    pthread_create(&congestion_control_thread, NULL, rate_control, &sock_det);
+  	appSend(sock_det, filename);
+    pthread_mutex_destroy(&rlock);
+    pthread_mutex_destroy(&slock);
+    pthread_mutex_destroy(&other_var_lock);
+    pthread_mutex_destroy(&send_buffer_lock);
+    pthread_mutex_destroy(&recv_buffer_lock);
+    return 0;
   
    return 0;
 }
