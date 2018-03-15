@@ -21,27 +21,20 @@
  * error - wrapper for perror
  */
 
-typedef struct {
-   
-   char fileName[512];
-   int fileSize;
-   int noOfChunks;
-
-} fileDetails;
-
-typedef struct {
+typedef struct{
   
-  int sequenceNumber;
-  int chunkLength;
+   int sequenceNumber;
+   int chunkLength;
+   int recv_window_left;
 
-} header;
+}header;
 
-typedef struct {
+typedef struct{
  
-   header chunkHeader;
-   char chunkContents[1024];
+   header packetHeader;
+   char packetContents[1024];
 
-} fileChunk;
+}dataPacket;
  
 void error(char *msg) {
   perror(msg);
@@ -114,49 +107,23 @@ int main(int argc, char **argv) {
     {
     
     srand(time(NULL));
-    fileDetails f;
-    bzero(buf, BUFSIZE);
-    n = recvfrom(sockfd, (char*)&f, sizeof(fileDetails), 0,(struct sockaddr *) &clientaddr, &clientlen);
-    if (n < 0)
-      error("ERROR in recvfrom");
-    if(f.fileSize==0 && f.noOfChunks == 0)continue;
-    int i;
-    /* 
-     * gethostbyaddr: determine who sent the datagram
-     */
-    hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, 
-			  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-    if (hostp == NULL)
-      error("ERROR on gethostbyaddr");
-    hostaddrp = inet_ntoa(clientaddr.sin_addr);
-    if (hostaddrp == NULL)
-      error("ERROR on inet_ntoa\n");
-    printf("server received datagram from %s (%s)\n", 
-	   hostp->h_name, hostaddrp);
-    printf("server received %d/%d bytes: %s\n", sizeof(fileDetails), f.noOfChunks, f.fileName);
-    /* 
-     * sendto: echo the input back to the client 
-     */
-    bzero(buf,BUFSIZE);
-    strcpy(buf,"Received file details");
-    printf("%s %d %d\n",buf,f.fileSize,f.noOfChunks);
-    n = sendto(sockfd, buf, strlen(buf), 0,(struct sockaddr *) &clientaddr, clientlen);
-    if (n < 0) 
-      error("ERROR in sendto");
-    fileChunk p;
+
+    dataPacket p;
     //printf("%d %d",noOfReceivedPackets,f.noOfChunks);
-    FILE* fp = fopen(f.fileName,"wb");
+    FILE* fp = fopen("test.cpp","wb");
     int expectedseqnum = 1;
     int prevAck = 0;
-    while(expectedseqnum<=f.noOfChunks)
+    while(expectedseqnum<=5)
     {
-         n = recvfrom(sockfd, (char*)&p, sizeof(fileChunk), 0,(struct sockaddr *) &clientaddr, &clientlen);
-         int seqNo = p.chunkHeader.sequenceNumber;
+         n = recvfrom(sockfd, (char*)&p, sizeof(p), 0,(struct sockaddr *) &clientaddr, &clientlen);
+         puts(p.packetContents);
+         int seqNo = p.packetHeader.sequenceNumber;
+         printf("%d\n",seqNo);
          if(seqNo == expectedseqnum)
          {
             unsigned int i;
-            for(i = 0; i < p.chunkHeader.chunkLength; ++i) {
-                fputc(p.chunkContents[i],fp);
+            for(i = 0; i < p.packetHeader.chunkLength; ++i) {
+                fputc(p.packetContents[i],fp);
             }
             int t = drop_probability*1000;
             int no = rand()%1000;
@@ -179,7 +146,7 @@ int main(int argc, char **argv) {
      fclose(fp);
      char command[1024];
      strcpy(command,"md5sum ");
-     strcat(command,f.fileName);
+     strcat(command,"test.cpp");
     FILE *md5_cmd = popen(command, "r");
     if (md5_cmd == NULL) {
         fprintf(stderr, "popen(3) error");
