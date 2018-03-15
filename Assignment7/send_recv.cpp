@@ -35,8 +35,8 @@ int cwnd;
 int base;
 int nextseqnum;
 int tempp;
-int ack;
 int prevReceived;
+int ack;
 time_t startTime,endTime;
 map< int, int > dupAckCount;
 
@@ -71,6 +71,7 @@ void error(char *msg) {
   perror(msg);
   exit(1);
 }
+
 int udp_send(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPacket fileChunk){
 	/* Sends udp packets - sending file details */
     int n = sendto(sockfd, (char*)(&fileChunk), sizeof(fileChunk), 0, ((sockaddr*)&serveraddr), serverlen);
@@ -155,7 +156,7 @@ int rate_control(int sockfd,struct sockaddr_in serveraddr,int serverlen){
 	calls create packet */ 
 	/* If timeout occurs make cwnd = 1mss and half the ssthresh 
 	if triple ack then make ssthresh half and start from there */
-    int N = cwnd;
+    int N = min(cwnd,max(recv_window_free,0));
     int n;
     int temp2 = tempp;
     while(base<=int((ceil(1.0*strlen(senderBuffer)/MSS))))
@@ -178,16 +179,13 @@ int rate_control(int sockfd,struct sockaddr_in serveraddr,int serverlen){
          }
     int flag = 0;
     int tripleDupAck,timeout;
-    int ack;
-    n = recvfrom(sockfd,(char*)&ack,sizeof(int),0,(sockaddr*)&serveraddr,(socklen_t*)&serverlen);
-    if(n<=0)flag=1;
     /*while(1)
     {
         time(&endTime);
         if(endTime-startTime>=N*TIMEOUT_VAL)
         {
         	flag = 1;
-        	break;
+        	break;ment 4 
         }
         else
         	break;
@@ -226,8 +224,8 @@ int rate_control(int sockfd,struct sockaddr_in serveraddr,int serverlen){
 		cwnd = MSS;
 		slowStart = 1;
 	
-	    }
-	    else 	if(tripleDupAck)
+	  }
+	    else if(tripleDupAck)
 	   {
 		 ssthresh/=2;
 		 cwnd = ssthresh;
@@ -248,6 +246,7 @@ int update_window(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPac
 		cwnd = cwnd+(MSS*MSS)/cwnd;
 	//get lock
     ack = d.packetHeader.sequenceNumber;
+    recv_window_free = d.packetHeader.recv_window_left;
 	//unlock
 	//rate_control(sockfd,serveraddr, serverlen);
 	return cwnd;
