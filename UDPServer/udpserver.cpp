@@ -90,6 +90,7 @@ int create_data_packet(int sockfd,struct sockaddr_in serveraddr,int serverlen,ch
 		d.packetHeader.recv_window_left = recv_window_free;
 	else
 		d.packetHeader.recv_window_left = -9999;
+  cout<<"sent ack "<<d.packetHeader.sequenceNumber<<endl;
 	return udp_send(sockfd,serveraddr,serverlen,d);
 
 }
@@ -258,17 +259,21 @@ int main(int argc, char **argv) {
 	nextseqnum = 1;
 	lastRecvd = 0;
 	ssthresh = 340*1024;
+  recv_window_free = 9999;
     dataPacket p;
     //printf("%d %d",noOfReceivedPackets,f.noOfChunks);
     FILE* fp = fopen("test.cpp","wb");
     int expectedseqnum = 1;
     int prevAck = 0;
-    while(expectedseqnum<=5)
+    while(1)
     {
-         udp_receive(sockfd,clientaddr,clientlen,p);
-         puts(p.packetContents);
+         int n = recvfrom(sockfd, (char*)&p, sizeof(p), 0,(struct sockaddr *) &clientaddr, (socklen_t*)&clientlen);
+         cout<<"hi"<<" "<<p.packetContents<<endl;
          int seqNo = p.packetHeader.sequenceNumber;
          printf("%d\n",seqNo);
+         int proba = rand()%1000;
+         if(proba<=(int)drop_probability*1000)
+         send_ack(sockfd,clientaddr,clientlen,seqNo);
          expectedseqnum++;
      }
      fclose(fp);
