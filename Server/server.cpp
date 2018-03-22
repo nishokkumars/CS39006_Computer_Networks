@@ -67,9 +67,8 @@ int main(int argc, char **argv) {
         FILE* fp = fopen(fileName,"wb");
         while(c1<noOfChunks)
         {
-            appRecv(sockfd,clientaddr,clientlen,buff);
-            unsigned int i;
-            for(i = 0; i < strlen(buff); ++i) {
+            int len = appRecv(sockfd,clientaddr,clientlen,buff);
+            for(int i = 0; i < len; ++i) {
                 fputc(buff[i],fp);
             }
             c1++;
@@ -93,8 +92,7 @@ int main(int argc, char **argv) {
            break;
         }
         cout<<buffer<<endl;
-        /*appSend(sockfd,clientaddr,clientlen,buffer);*/
-        exit(0);
+        appSend(sockfd,clientaddr,clientlen,buffer,n);
     }
     return 0;
 }

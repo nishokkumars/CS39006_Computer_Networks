@@ -22,7 +22,7 @@ int main(int argc,char* argv[]){
     struct timeval timeout = {1,0};
     /* socket: create the socket */
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO,(char*)&timeout,sizeof(timeout));
+    //setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO,(char*)&timeout,sizeof(timeout));
     if (sockfd < 0) 
         perror("ERROR opening socket");
 
@@ -64,15 +64,15 @@ int main(int argc,char* argv[]){
     bool endOfFile = feof(fp);
     int k,l;
     strcpy(buffer,argv[3]);
-    appSend(sockfd,serveraddr,serverlen,buffer);
+    appSend(sockfd,serveraddr,serverlen,buffer,strlen(buffer));
     memset(buffer,0,sizeof(buffer));
     string temp1 = to_string(fileSize);
     strcpy(buffer,temp1.c_str());
-    appSend(sockfd,serveraddr,serverlen,buffer);    
+    appSend(sockfd,serveraddr,serverlen,buffer,strlen(buffer));    
     memset(buffer,0,sizeof(buffer));
     temp1 = to_string(noOfChunks);
     strcat(buffer,temp1.c_str());
-    appSend(sockfd,serveraddr,serverlen,buffer);
+    appSend(sockfd,serveraddr,serverlen,buffer,strlen(buffer));
     for(l=0;l<noOfChunks;l++){
         memset(buffer,0,sizeof(buffer));
         for(k=0;k<MSS && !endOfFile;k++){
@@ -86,7 +86,7 @@ int main(int argc,char* argv[]){
             }
         }
         buffer[k] = '\0';
-        appSend(sockfd,serveraddr,serverlen,buffer);
+        appSend(sockfd,serveraddr,serverlen,buffer,k);
     }
     char command[1024];
     strcpy(command,"md5sum ");
@@ -104,6 +104,17 @@ int main(int argc,char* argv[]){
         buffer1[nn] = '\0';
         break;
     }
-    cout<<buffer1<<endl;
+    char buffer2[1024];
+    dataPacket temp;
+    cout<<"waiting..."<<endl;
+    int len = appRecv(sockfd,serveraddr,serverlen,buffer2);
+    cout<<buffer2<<endl;
+    if(strcmp(buffer1,buffer2)==0)
+    {
+        cout<<"MD5 is a match\n";
+    }else{
+
+        cout<<"MD5 not a match\n";
+    }
     return 0;
 }

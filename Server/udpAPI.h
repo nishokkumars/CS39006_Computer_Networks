@@ -54,7 +54,7 @@ struct header{
    int recv_window_left;
    bool operator==(header& rhs)const{
 
-   	  return sequenceNumber == rhs.sequenceNumber && chunkLength == rhs.chunkLength && recv_window_left == rhs.recv_window_left;
+      return sequenceNumber == rhs.sequenceNumber && chunkLength == rhs.chunkLength && recv_window_left == rhs.recv_window_left;
    }
 
 };
@@ -69,6 +69,7 @@ struct dataPacket{
    }
 
 };
+bool myfunction (pair< int, dataPacket > lhs,pair< int, dataPacket> rhs) { return (lhs.first < rhs.first ); }
 
 struct socket_details{
     
@@ -87,7 +88,7 @@ struct udp_recv_str{
 
 char senderBuffer[SENDER_BUFFER];
 char receiverBuffer[RECV_BUFFER];
-vector< pair< int, string > > recvBuffer;
+vector< pair< int, dataPacket > > recvBuffer;
  
 void error(char *msg) {
   perror(msg);
@@ -96,19 +97,25 @@ void error(char *msg) {
 
 int udp_send(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPacket fileChunk){
   /* Sends udp packets - sending file details */
+
     int n = sendto(sockfd, (char*)(&fileChunk), sizeof(fileChunk), 0, ((sockaddr*)&serveraddr), serverlen);
     if(n<0)return 0;
     return 1;
 }
 
 
-int create_data_packet(int sockfd,struct sockaddr_in serveraddr,int serverlen,char* data,int seqNo){
+int create_data_packet(int sockfd,struct sockaddr_in serveraddr,int serverlen,char* data,int len,int seqNo){
   /* creates packets 
   calls udp_send */
   dataPacket d;
-  strcpy(d.packetContents,data);
+  int it;
+
+  for(it=0;it<len;it++)
+    d.packetContents[it] = data[it];
+  d.packetContents[it] = '\0';
+
   d.packetHeader.sequenceNumber = seqNo;
-  d.packetHeader.chunkLength = strlen(d.packetContents);
+  d.packetHeader.chunkLength = len;
   if(strcmp(data,"ACK")==0)
     d.packetHeader.recv_window_left = recv_window_free;
   else
@@ -121,14 +128,15 @@ int send_ack(int sockfd,struct sockaddr_in serveraddr,int serverlen, int seqNo){
   /* construct ack */
   /* calls udp_send */
   char *ack = (char *)"ACK";
-  create_data_packet(sockfd, serveraddr, serverlen,ack, seqNo);
+  create_data_packet(sockfd, serveraddr, serverlen,ack,3,seqNo);
 
 }
 
-int recvbuffer_handle(int sockfd,struct sockaddr_in serveraddr,int serverlen,char* buffer,int lastRecvd){
+int recvbuffer_handle(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPacket d){
   /* handles receiver buffer */
   /* calls send_ack() */
-  if(strcmp(buffer,"finish")==0)
+  lastRecvd = d.packetHeader.sequenceNumber;
+  if(strcmp(d.packetContents,"finish")==0)
   {
     send_ack(sockfd,serveraddr,serverlen,-1);
     return -1;
@@ -136,44 +144,46 @@ int recvbuffer_handle(int sockfd,struct sockaddr_in serveraddr,int serverlen,cha
   if(lastRecvd==expectedRecvd){
         
     int counter = expectedRecvd;
-    vector< pair< int , string  > >::iterator ptr;
+    vector< pair< int , dataPacket > >::iterator ptr;
     bool flag= false;
-    recvBuffer.push_back(make_pair(lastRecvd,buffer));
-    sort(recvBuffer.begin(),recvBuffer.end());
+    recvBuffer.push_back(make_pair(lastRecvd,d));
+    sort(recvBuffer.begin(),recvBuffer.end(),myfunction);
     for(ptr=recvBuffer.begin();ptr<recvBuffer.end();ptr++)
     {
 
-      recvBuffer.erase(unique(recvBuffer.begin(), recvBuffer.end()), recvBuffer.end());
        if((*ptr).first == counter)
        {
          send_ack(sockfd,serveraddr,serverlen,counter);
          counter++;
          expectedRecvd++;
          char temp[MSS];
-         strcpy(temp,(*ptr).second.c_str());
-         strcat(receiverBuffer,temp);
+         int it;
+         for(it=0;it<(*ptr).second.packetHeader.chunkLength;it++)
+          temp[it] = (*ptr).second.packetContents[it];
+          temp[it] = '\0';
+         for(int it1=0;it1<it;it1++)
+         receiverBuffer[receiverBufferLength++] = temp[it1];
          recvBuffer.erase(recvBuffer.begin());
        }
-       else break;
+       else if((*ptr).first>counter)break;
     } 
   
   }
   else if(lastRecvd > expectedRecvd){
 
-        recvBuffer.push_back(make_pair(lastRecvd,string(buffer)));
+        recvBuffer.push_back(make_pair(lastRecvd,d));
     send_ack(sockfd,serveraddr,serverlen,expectedRecvd);
-        sort(recvBuffer.begin(),recvBuffer.end());
-        recvBuffer.erase(unique(recvBuffer.begin(), recvBuffer.end()), recvBuffer.end());
-    recv_window_free = recv_window_free-strlen(buffer);
+        sort(recvBuffer.begin(),recvBuffer.end(),myfunction);
+    recv_window_free = recv_window_free-d.packetHeader.chunkLength;
   
   }
   return 0;
 }
 void * rate_control(void * param){
-	/* handles flow and congestion control
-	calls create packet */ 
-	/* If timeout occurs make cwnd = 1mss and half the ssthresh 
-	if triple ack then make ssthresh half and start from there */
+  /* handles flow and congestion control
+  calls create packet */ 
+  /* If timeout occurs make cwnd = 1mss and half the ssthresh 
+  if triple ack then make ssthresh half and start from there */
     socket_details * sock = (socket_details *)param;
     int sockfd = sock->sockfd;
     struct sockaddr_in serveraddr = sock->serveraddr;
@@ -198,17 +208,17 @@ void * rate_control(void * param){
       temp2 = tempp;
        while(nextseqnum<base+N && nextseqnum <=tt){
         
-        char to_be_sent_data[MSS];
+        char to_be_sent_data[MSS]={0};
         int lastSeqSent = nextseqnum-1;
         int noOfBytesSent = lastSeqSent*MSS;
         pthread_mutex_lock(&send_buffer_lock);
-        int temp1 = min(MSS,max((int)strlen(senderBuffer)-noOfBytesSent,0));
+        int temp1 = min(MSS,max(senderBufferLength-noOfBytesSent,0));
         int it;
         for(it=tempp;it<tempp+temp1;it++)
           to_be_sent_data[it-tempp] = senderBuffer[it];
         to_be_sent_data[it-tempp] = '\0';
         pthread_mutex_unlock(&send_buffer_lock);
-        n = create_data_packet(sockfd, serveraddr, serverlen,to_be_sent_data,nextseqnum);
+        n = create_data_packet(sockfd, serveraddr, serverlen,to_be_sent_data,temp1,nextseqnum);
         if(base == nextseqnum){
           //start timer
           time(&startTime);
@@ -228,14 +238,14 @@ void * rate_control(void * param){
         time(&endTime);
         if(endTime-startTime>=N*TIMEOUT_VAL)
         {
-        	flag = 1;
-        	break; 
+          flag = 1;
+          break; 
         }
 
     }
     if(flag==1){
-    	int ptr;
-    	timeout = 1;
+      int ptr;
+      timeout = 1;
         ssthresh = ssthresh/2;
         cwnd = 1;
         slowStart = 1;
@@ -273,25 +283,25 @@ void * rate_control(void * param){
          
       if(timeout){
         /* used lock here */
-  		  ssthresh = ssthresh/2;
-  		  cwnd = 1;
-  		  slowStart = 1;
-	   }
-	    else if(tripleDupAck)
-	   {
+        ssthresh = ssthresh/2;
+        cwnd = 1;
+        slowStart = 1;
+     }
+      else if(tripleDupAck)
+     {
       /* Used lock here */
-  		 ssthresh/=2;
-  		 cwnd = ssthresh/MSS;
-  		 slowStart = 0;
+       ssthresh/=2;
+       cwnd = ssthresh/MSS;
+       slowStart = 0;
        
-	   }
+     }
     }
     pthread_mutex_unlock(&other_var_lock);
   }
   int p = 0;
   while(1)
   {
-     int n = create_data_packet(sockfd, serveraddr, serverlen,(char*)"finish",-1);
+     int n = create_data_packet(sockfd, serveraddr, serverlen,(char*)"finish",6,-1);
      time(&startTime);
      int flag = 0;
      int temp3 = 0;
@@ -319,29 +329,29 @@ void * rate_control(void * param){
 }
 
 int update_window(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPacket d){
-	/* updates window size on receiving the acks
-	calls rate control */
+  /* updates window size on receiving the acks
+  calls rate control */
   /*
   Used lock here 
   */
   pthread_mutex_lock(&other_var_lock);
-	if(slowStart){
-		cwnd = 2*cwnd;
+  if(slowStart){
+    cwnd = 2*cwnd;
   }
-	else{
+  else{
     
-		cwnd = cwnd+(MSS)/cwnd;
+    cwnd = cwnd+(MSS)/cwnd;
   
   }
-	//get lock
+  //get lock
   ack = d.packetHeader.sequenceNumber;
   ackArrived = 1;
   recv_window_free = d.packetHeader.recv_window_left;
   int temp = cwnd;
   pthread_mutex_unlock(&other_var_lock);
-	//unlock
-	//rate_control(sockfd,serveraddr, serverlen);
-	return temp;
+  //unlock
+  //rate_control(sockfd,serveraddr, serverlen);
+  return temp;
 }
 
 
@@ -355,7 +365,7 @@ int parse_packets(int sockfd,struct sockaddr_in serveraddr,int serverlen,dataPac
   }
   else{
 
-    return recvbuffer_handle(sockfd, serveraddr, serverlen,d.packetContents,d.packetHeader.sequenceNumber);
+    return recvbuffer_handle(sockfd, serveraddr, serverlen,d);
   }
   return 0;
 
@@ -379,7 +389,7 @@ void * udp_receive(void *param){
     }
 }
 
-int udp_receive(int sockfd,struct sockaddr_in clientaddr,int clientlen,dataPacket fileChunk){
+int udp_receive(int sockfd,struct sockaddr_in& clientaddr,int clientlen,dataPacket fileChunk){
   /* Sends udp packets - sending file details*/
     int n = recvfrom(sockfd, (char*)&fileChunk, sizeof(fileChunk), 0,(struct sockaddr *) &clientaddr, (socklen_t*)&clientlen);
     if(n<0)return 0;
@@ -391,7 +401,7 @@ void clearRecvBuffer()
 
 }
 
-int appRecv(int sockfd,struct sockaddr_in clientaddr,int clientlen,char* buffer){
+int appRecv(int sockfd,struct sockaddr_in& clientaddr,int clientlen,char buffer[RECV_BUFFER]){
   /* calls recvbuffer_handle and gets data from there
   is blocked if no data in buffer */
     cwnd = 3;
@@ -401,6 +411,7 @@ int appRecv(int sockfd,struct sockaddr_in clientaddr,int clientlen,char* buffer)
     lastRecvd = 0;
     ssthresh = 340*1024;
     recv_window_free = RECV_BUFFER;
+    receiverBufferLength = 0;
     clearRecvBuffer();
     dataPacket p;
     while(1)
@@ -408,26 +419,30 @@ int appRecv(int sockfd,struct sockaddr_in clientaddr,int clientlen,char* buffer)
          int n = udp_receive(sockfd,clientaddr,clientlen,p);
          if(n<0)break;
      }
-     strcpy(buffer,receiverBuffer);
+    int it;
+    for(it=0;it<receiverBufferLength;it++)
+      buffer[it] = receiverBuffer[it];
+     buffer[it] = '\0';
      clearRecvBuffer();
+     return receiverBufferLength;
 }
 
-int sendbuffer_handle(char* buffer){
-	/* maintains queue of sender packets
-	calls rate control */
+int sendbuffer_handle(char* buffer,int length){
+  /* maintains queue of sender packets
+  calls rate control */
   pthread_mutex_lock(&send_buffer_lock);
   int i = 0;
-	int k = 0;
+  int k = 0;
   /* 
     Used lock Here
   */
-	while(i<SENDER_BUFFER && k<strlen(buffer))
-	{
-		senderBuffer[i++] = buffer[k++];
-	}
-	senderBufferLength = i;
+  while(i<SENDER_BUFFER && k<length)
+  {
+    senderBuffer[i++] = buffer[k++];
+  }
+  senderBufferLength = length;
   pthread_mutex_unlock(&send_buffer_lock);
-	return k;
+  return k;
 
 }
 void clearSendBuffer()
@@ -473,9 +488,9 @@ void destroy()
     pthread_mutex_destroy(&send_buffer_lock);
     pthread_mutex_destroy(&recv_buffer_lock);
 }
-int appSend(int sockfd,struct sockaddr_in serveraddr,int serverlen,char * buffer2){
+int appSend(int sockfd,struct sockaddr_in serveraddr,int serverlen,char * buffer2,int length){
 
-	  socket_details sock_det;
+    socket_details sock_det;
     udp_recv_str temp_recv;
     sock_det.sockfd = sockfd;
     sock_det.serveraddr = serveraddr;
@@ -491,13 +506,15 @@ int appSend(int sockfd,struct sockaddr_in serveraddr,int serverlen,char * buffer
     tempp = 0;
     slowStart = 1;
     prevReceived = -1;
+    senderBufferLength = 0;
     init();
     clearSendBuffer();
-    sendbuffer_handle(buffer2);
+    sendbuffer_handle(buffer2,length);
     pthread_t udp_recv_thread, congestion_control_thread;
     pthread_create(&udp_recv_thread, NULL, udp_receive,&temp_recv );
     pthread_create(&congestion_control_thread, NULL, rate_control, &sock_det);
     pthread_join(congestion_control_thread,NULL);
     pthread_join(udp_recv_thread,NULL);
     clearSendBuffer();
+    destroy();
 }
