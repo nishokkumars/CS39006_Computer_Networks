@@ -1,29 +1,10 @@
-all: udpserver udpclient tcpserver tcpclient
-	 rm ./UDPClient/*.o ./UDPServer/*.o ./TCPClient/*.o ./TCPServer/*.o
-	 
-udpserver: udpserver.o
-	gcc -g ./UDPServer/udpserver.o -o ./UDPServer/udpserver -lm
+all: client server
 
-udpclient: udpclient.o
-	gcc -g ./UDPClient/udpclient.o -o ./UDPClient/udpclient  -lm
+client:	./Client/client.cpp
+	g++ -std=c++11 -I. ./Client/client.cpp -lpthread -o ./Client/client
 
-udpclient.o: ./UDPClient/udpclient.c 
-	gcc -g ./UDPClient/udpclient.c -c -o ./UDPClient/udpclient.o
-
-udpserver.o: ./UDPServer/udpserver.c
-	gcc -g ./UDPServer/udpserver.c -c -o ./UDPServer/udpserver.o
-
-tcpserver: tcpserver.o
-	gcc -g ./TCPServer/tcpserver.o -o ./TCPServer/tcpserver -lm
-
-tcpclient: tcpclient.o
-	gcc -g ./TCPClient/tcpclient.o -o ./TCPClient/tcpclient -lm
-
-tcpclient.o: ./TCPClient/tcpClient.c 
-	gcc -g ./TCPClient/tcpClient.c -c -o ./TCPClient/tcpclient.o
-
-tcpserver.o: ./TCPServer/tcpserver2.c
-	gcc -g ./TCPServer/tcpserver2.c -c -o ./TCPServer/tcpserver.o
+server:	./Server/server.cpp
+	g++ -std=c++11 -I. ./Server/server.cpp -lpthread -o ./Server/server
 
 clean:
-	rm ./UDPClient/udpclient ./UDPServer/udpserver ./TCPServer/tcpserver ./TCPClient/tcpclient
+	rm ./Client/client ./Server/server
