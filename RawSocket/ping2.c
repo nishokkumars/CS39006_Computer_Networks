@@ -1,16 +1,3 @@
-//A simple Ping program to ping any address such as google.com in Linux 
-//run program as : gcc -o ping ping.c
-// then : ./ping google.com
-//can ping localhost addresses 
-//see the RAW socket implementation
-/*.....Ping Application....*/
-/*   Note Run under root priveledges  */
-/*  On terminal 
-  $ gcc -o out ping.c 
-  $ sudo su
-  # ./out 127.0.0.1 
-   OR
-  # ./out google.com */
 #include <stdio.h>
 #include <signal.h>
 #include <arpa/inet.h>
@@ -26,7 +13,7 @@
 
 #define PACKET_SIZE     4096
 #define MAX_WAIT_TIME   5
-#define MAX_NO_PACKETS  3
+#define MAX_NO_PACKETS  10
 
 char sendpacket[PACKET_SIZE];
 char recvpacket[PACKET_SIZE];
@@ -39,7 +26,7 @@ pid_t pid;
 struct sockaddr_in from;
 struct timeval tvrecv;
 
-void statistics(int signo);
+void statistics(int signo, char *buf);
 unsigned short cal_chksum(unsigned short *addr, int len);
 int pack(int pack_no);
 void send_packet(void);
@@ -47,9 +34,9 @@ void recv_packet(void);
 int unpack(char *buf, int len);
 void tv_sub(struct timeval *out, struct timeval *in);
 
-void statistics(int signo)
+void statistics(int signo, char *buf)
 {
-    printf("\n--------------------PING statistics-------------------\n");
+    printf("\n----%s----PING statistics-------------------\n", buf);
     printf("%d packets transmitted, %d received , %%%d lost\n", nsend,nreceived, (nsend - nreceived) / nsend * 100);
     close(sockfd);
     exit(1);
@@ -97,16 +84,18 @@ int pack(int pack_no)
 
 void send_packet(){
     int packetsize;
-    while (nsend < MAX_NO_PACKETS)
+    int temp =0;
+    while (temp< 1)
     {
         nsend++;
+        temp++;
         packetsize = pack(nsend); 
         if (sendto(sockfd, sendpacket, packetsize, 0, (struct sockaddr*)&dest_addr, sizeof(dest_addr)) < 0)
         {
             perror("sendto error");
             continue;
         } 
-        sleep(1);
+        //sleep(1);
     }
 }
 
@@ -116,7 +105,8 @@ void recv_packet()
     extern int errno;
     signal(SIGALRM, statistics);
     fromlen = sizeof(from);
-    while (nreceived < nsend)
+    int temp =0;
+    while (nreceived < nsend && temp<1)
     {
         alarm(MAX_WAIT_TIME);
         if ((n = recvfrom(sockfd, recvpacket, sizeof(recvpacket), 0, (struct sockaddr*) &from, &fromlen)) < 0)
@@ -130,12 +120,9 @@ void recv_packet()
         if (unpack(recvpacket, n) ==  - 1)
             continue;
         nreceived++;
+        temp++;
     }
 }
-
-
-
-
 
 int unpack(char *buf, int len)
 
@@ -157,12 +144,21 @@ int unpack(char *buf, int len)
     if ((icmp->icmp_type == ICMP_ECHOREPLY) && (icmp->icmp_id == pid)){
         tvsend = (struct timeval*)icmp->icmp_data;
         tv_sub(&tvrecv, tvsend); 
-        rtt = tvrecv.tv_sec * 1000+tvrecv.tv_usec / 1000;
+        rtt = (tvrecv.tv_sec*1000)+(tvrecv.tv_usec / 1000);
         printf("%d byte from %s: icmp_seq=%u ttl=%d rtt=%.3f ms\n", len,
         inet_ntoa(from.sin_addr), icmp->icmp_seq, ip->ip_ttl, rtt);
     }
     else
         return  - 1;
+}
+
+void tv_sub(struct timeval *out, struct timeval *in)
+{
+    if ((out->tv_usec -= in->tv_usec) < 0){
+        --out->tv_sec;
+        out->tv_usec += 1000000;
+    } 
+    out->tv_sec -= in->tv_sec;
 }
 
 void main(int argc, char *argv[])
@@ -171,6 +167,7 @@ void main(int argc, char *argv[])
     struct protoent *protocol;
     unsigned long inaddr = 0l;
     int waittime = MAX_WAIT_TIME;
+    int count =0;
     int size = 50 * 1024;
     if (argc < 2){
         printf("usage:%s hostname/IP address\n", argv[0]);
@@ -203,21 +200,11 @@ void main(int argc, char *argv[])
         dest_addr.sin_addr.s_addr = inet_addr(argv[1]);
     pid = getpid();
     printf("PING %s(%s): %d bytes data in ICMP packets.\n", argv[1], inet_ntoa(dest_addr.sin_addr), datalen);
-    send_packet(); 
-    recv_packet(); 
-    statistics(SIGALRM); 
+    while(count< MAX_NO_PACKETS){
+    	send_packet();	
+    	recv_packet();
+    	count++;
+    }
+    statistics(SIGALRM, argv[1]); 
     return 0;
 }
-
-void tv_sub(struct timeval *out, struct timeval *in)
-{
-    if ((out->tv_usec -= in->tv_usec) < 0){
-        --out->tv_sec;
-        out->tv_usec += 1000000;
-    } 
-    out->tv_sec -= in->tv_sec;
-}
-
-
-
-/*------------- The End -----------*/
