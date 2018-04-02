@@ -69,7 +69,8 @@ int pack(int pack_no)
     int i, packsize;
     struct icmp *icmp;
     struct timeval *tval;
-    icmp = (struct icmp*)sendpacket;
+
+    icmp = (struct icmp *)(sendpacket+20);
     icmp->icmp_type = ICMP_ECHO;
     icmp->icmp_code = 0;
     icmp->icmp_cksum = 0;
@@ -79,7 +80,7 @@ int pack(int pack_no)
     tval = (struct timeval*)icmp->icmp_data;
     gettimeofday(tval, NULL); 
     icmp->icmp_cksum = cal_chksum((unsigned short*)icmp, packsize); 
-    return packsize;
+    return packsize+sizeof(struct ip);
 }
 
 void send_packet(){
@@ -90,6 +91,22 @@ void send_packet(){
         nsend++;
         temp++;
         packetsize = pack(nsend); 
+
+        struct ip *ip_header = (struct ip *) sendpacket;
+	    //icmp = (struct icmp*)sendpacket;
+	    ip_header->ip_hl = 5;
+	    ip_header->ip_v = 4;
+	    ip_header->ip_tos = 0;
+	    ip_header->ip_len = 20+8+datalen; // 20 for ip header , 8 icmp header , datalen for the icmp message 
+	    ip_header->ip_id = pid;
+	    ip_header->ip_off = 0;
+	    ip_header->ip_ttl = 62; 
+	    ip_header->ip_p = IPPROTO_ICMP;
+	    // set your IP address before running the code 
+	    inet_pton (AF_INET, "10.146.22.39", &(ip_header->ip_src));
+	    inet_pton (AF_INET, inet_ntoa(dest_addr.sin_addr), &(ip_header->ip_dst));
+	    ip_header->ip_sum = cal_chksum ((unsigned short *) sendpacket, sizeof(struct ip));
+
         if (sendto(sockfd, sendpacket, packetsize, 0, (struct sockaddr*)&dest_addr, sizeof(dest_addr)) < 0)
         {
             perror("sendto error");
@@ -186,6 +203,12 @@ void main(int argc, char *argv[])
     setuid(getuid());
     setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
     bzero(&dest_addr, sizeof(dest_addr));
+
+    int one = 1;
+    const int *val = &one;
+    if (setsockopt (sockfd, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
+        printf ("Cannot set HDRINCL!\n");
+
     dest_addr.sin_family = AF_INET;
     if (inaddr = inet_addr(argv[1]) == INADDR_NONE)
     {
